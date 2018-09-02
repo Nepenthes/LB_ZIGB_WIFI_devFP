@@ -1,0 +1,459 @@
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE APPTIMER
+OBJECT MODULE PLACED IN .\Output\appTimer.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Usr\appTimer.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_li
+                    -b;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\appTimer.lst) OBJECT(.\Output\appTimer.obj)
+
+line level    source
+
+   1          #include "timer.h"
+   2          #include "USART.h"
+   3          
+   4          #include "wifi_LPT220.h"
+   5          #include "usrKin.h"
+   6          #include "appTimer.h"
+   7          #include "Tips.h"
+   8          #include "Relay.h"
+   9          
+  10          #include "stdio.h"
+  11          #include "string.h"
+  12          
+  13          #include "soft_uart.h"
+  14          
+  15          //***************指纹线程变量引用区*********************/
+  16          extern threadFP_Mode    process_FPworkMode;             //指纹模块工作模式
+  17          
+  18          extern stt_stepAdd              umNew_AddStep;                  //学习模式时_进程指示
+  19          extern stt_stepAdd              umNew_AddStep_StandBy;  //学习模式时_预备进程指示
+  20          extern bit                              FP_umDetect_enFLAG;             //指纹模块工作模式为：主动检测 模板时，工作使能标志，用于权限定时
+  21          extern stt_stepDtt              um_dttStep;                             //指纹模块工作模式为：主动检测 模板时，_进程指示
+  22          extern bit                              FPvalidation_flg;               //指纹模块工作模式为：主动检测 模板时，_识别完成标志
+  23          
+  24          extern u16 xdata                Mode_umAdd_timeOutcnt;  //用于学习模式时超时检测
+  25          
+  26          extern u16 xdata                FPmodeCmpTips_cnt;              //模式触发完成后Tips专用计时，需在timer中调用
+  27          
+  28          //***************继电器线程变量引用区*******************/
+  29          extern rly_timFun               relayTIM;
+  30          extern bit                              status_Relay;
+  31          
+  32          //***************用户按键线程变量引用区*****************/
+  33          extern bit                              ledBackground_method;
+  34          extern bit                              switch_NONC_method;
+  35          extern bit                              usrKeyCount_EN;
+  36          extern u16                              usrKeyCount;
+  37          
+  38          //***************WIFI模块功能引脚按键线程变量引用区*****/
+  39          extern u16 xdata                funKey_WIFI_cnt;
+  40          
+  41          //***************WIFI驱动变量引用区***************************/
+  42          extern status_Mode              SYS_status_Mode;        //系统状态
+  43          
+  44          //***************数据传输变量引用区***************************/
+  45          extern u16                              heartBeat_Cnt;  //心跳包周期计数
+  46          
+  47          //***************数据传输变量引用区***************************/
+  48          extern bit                              rxTout_count_EN;        
+  49          extern u8                               rxTout_count;   //串口接收超时计数
+  50          extern bit                              uartRX_toutFLG;
+  51          extern u8                               datsRcv_length;
+  52          extern uartTout_datsRcv xdata datsRcv_ZIGB;
+  53          
+  54          /*----------------------------------------------------------------------------------------*/
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 2   
+
+  55          void appTimer0_Init(void){
+  56   1      
+  57   1              AUXR |= 0x80;           
+  58   1              TMOD &= 0xF0;           
+  59   1              TL0   = 0x50;           
+  60   1              TH0   = 0xFB;   
+  61   1              TF0   = 0;      
+  62   1              ET0       = 1;  //开中断
+  63   1              PT0   = 0;      //高优先级中断
+  64   1              
+  65   1              TR0   = 1;      
+  66   1      }
+  67          
+  68          /********************* Timer0中断函数************************///1ms
+  69          void timer0_Rountine (void) interrupt TIMER0_VECTOR{
+  70   1              
+  71   1              u8 code   period_1ms                    = 20;           //1ms专用
+  72   1              static u8 count_1ms                     = 0;
+  73   1              
+  74   1              static u16      timTipsFP_Cnt   = 0;
+  75   1              const  u16      Period_TipsFP   = 120;
+  76   1              
+  77   1              static u16      timTipsSYS_Cnt  = 0;
+  78   1              const  u16      Period_TipsSYS  = 80;
+  79   1              
+  80   1              static u16      timRelay_Cnt    = 0;
+  81   1              
+  82   1              const  u8       WDT_Period              = 150;
+  83   1              static u8       WDT_cnt                 = 0;    
+  84   1              
+  85   1              //*******************标准1毫秒计数业务**************************/
+  86   1              if(count_1ms < period_1ms)count_1ms ++;
+  87   1              else{
+  88   2              
+  89   2                      count_1ms = 0;
+  90   2                      
+  91   2                      /*心跳包周期计数业务*/
+  92   2                      heartBeat_Cnt++;
+  93   2      
+  94   2                      /*喂狗业务*/
+  95   2                      if(WDT_cnt < WDT_Period)WDT_cnt ++;
+  96   2                      else{
+  97   3                      
+  98   3                              WDT_cnt         =       0;
+  99   3                              
+ 100   3                              WDT_CONTR       |=      (1 << 4);       //喂狗
+ 101   3                      }
+ 102   2                      
+ 103   2                      /*指纹模块指示灯业务代码*/
+ 104   2                      if(timTipsFP_Cnt < Period_TipsFP)timTipsFP_Cnt ++;
+ 105   2                      else{
+ 106   3                      
+ 107   3                              timTipsFP_Cnt = 0;
+ 108   3                              
+ 109   3                              switch(process_FPworkMode){
+ 110   4                                      
+ 111   4                                      case work_Mode_NULL:{
+ 112   5                                      
+ 113   5                                      //提示动作保留
+ 114   5                                      }break;
+ 115   4                              
+ 116   4                                      case work_Mode_umAdd:{
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 3   
+
+ 117   5                                              
+ 118   5                                              switch(umNew_AddStep_StandBy){
+ 119   6                                              
+ 120   6                                                      case umStepAdd_A:{
+ 121   7                                                      
+ 122   7                                                              led_Act(blue, led_flip);
+ 123   7                                                      }break;
+ 124   6                                                      
+ 125   6                                                      case umStepAdd_B:{
+ 126   7                                                      
+ 127   7                                                              led_Act(green, led_flip);
+ 128   7                                                      }break;
+ 129   6                                                      case umStepAdd_C:{
+ 130   7                                                      
+ 131   7                                                              led_Act(green, led_on);
+ 132   7                                                      }break;
+ 133   6                                                      
+ 134   6                                                      case umStepAdd_D:{
+ 135   7                                                      
+ 136   7                                                              
+ 137   7                                                      }break;
+ 138   6                                                      
+ 139   6                                                      case umStepAdd_Fault:{
+ 140   7                                                      
+ 141   7                                                              led_Act(red, led_on);
+ 142   7                                                      }break;
+ 143   6                                                      
+ 144   6                                                      default:{
+ 145   7                                                      
+ 146   7                                                      }break;
+ 147   6                                              }
+ 148   5                                      }break;
+ 149   4                                      
+ 150   4                                      case work_Mode_umDetect:{
+ 151   5                                              
+ 152   5                                              if(FP_umDetect_enFLAG){         /*指纹模块主动检测使能*///指纹模块工作在主动检测模式下，检测未被禁用
+ 153   6                                              
+ 154   6                                                      switch(um_dttStep){
+ 155   7                                                      
+ 156   7                                                              case umStepDtt_A:{
+ 157   8                                                              
+ 158   8                                                                      if(!ledBackground_method){
+ 159   9                                                                      
+ 160   9                                                                              if(status_Relay){
+ 161  10                                                                              
+ 162  10                                                                                      led_Act(blue, led_on);
+ 163  10                                                                              }else{
+ 164  10                                                                              
+ 165  10                                                                                      led_Act(green, led_on);
+ 166  10                                                                              }
+ 167   9                                                                      }else{
+ 168   9                                                                              
+ 169   9                                                                              if(status_Relay){
+ 170  10                                                                              
+ 171  10                                                                                      led_Act(green, led_on);
+ 172  10                                                                              }else{
+ 173  10                                                                              
+ 174  10                                                                                      led_Act(blue, led_on);
+ 175  10                                                                              }
+ 176   9                                                                      }
+ 177   8                                                              }break;
+ 178   7                                                              
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 4   
+
+ 179   7                                                              case umStepDtt_B:{
+ 180   8                                                                      
+ 181   8                                                                      led_darkAll();
+ 182   8                                                              }break;
+ 183   7                                                              
+ 184   7                                                              case umStepDtt_Csuccess:{
+ 185   8                                                              
+ 186   8                                                                      if(!ledBackground_method){
+ 187   9                                                                      
+ 188   9                                                                              if(status_Relay){
+ 189  10                                                                              
+ 190  10                                                                                      led_Act(blue, led_flip);
+ 191  10                                                                              }else{
+ 192  10                                                                              
+ 193  10                                                                                      led_Act(green, led_flip);
+ 194  10                                                                              }
+ 195   9                                                                      }else{
+ 196   9                                                                              
+ 197   9                                                                              if(status_Relay){
+ 198  10                                                                              
+ 199  10                                                                                      led_Act(green, led_flip);
+ 200  10                                                                              }else{
+ 201  10                                                                              
+ 202  10                                                                                      led_Act(blue, led_flip);
+ 203  10                                                                              }
+ 204   9                                                                      }
+ 205   8                                                              }break;
+ 206   7                                                              
+ 207   7                                                              case umStepDtt_Cfail:{
+ 208   8                                                              
+ 209   8                                                                      led_Act(red, led_flip);
+ 210   8                                                              }break;
+ 211   7                                                              
+ 212   7                                                              default:{
+ 213   8                                                              
+ 214   8                                                              //提示动作保留
+ 215   8                                                              }break;
+ 216   7                                                      }
+ 217   6                                              }else{  /*指纹模块主动检测失能*///指纹模块工作在主动检测模式下，检测被禁用
+ 218   6                                              
+ 219   6                                                      switch(um_dttStep){
+ 220   7                                                      
+ 221   7                                                              case umStepDtt_A:{
+ 222   8                                                              
+ 223   8                                                                      if(!ledBackground_method){
+ 224   9                                                                      
+ 225   9                                                                              if(status_Relay){
+ 226  10                                                                              
+ 227  10                                                                                      led_Act(green, led_on);
+ 228  10                                                                              }else{
+ 229  10                                                                              
+ 230  10                                                                                      led_Act(blue, led_on);
+ 231  10                                                                              }
+ 232   9                                                                      }else{
+ 233   9                                                                      
+ 234   9                                                                              if(status_Relay){
+ 235  10                                                                              
+ 236  10                                                                                      led_Act(blue, led_on);
+ 237  10                                                                              }else{
+ 238  10                                                                              
+ 239  10                                                                                      led_Act(green, led_on);
+ 240  10                                                                              }
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 5   
+
+ 241   9                                                                      }
+ 242   8                                                              }break;
+ 243   7                                                              
+ 244   7                                                              case umStepDtt_B:{
+ 245   8                                                                      
+ 246   8                                                                      led_Act(red, led_on);
+ 247   8                                                              }break;
+ 248   7                                                      }
+ 249   6                                              }
+ 250   5                                      }break;
+ 251   4                                      
+ 252   4                                      default:break;
+ 253   4                              }
+ 254   3                      }
+ 255   2                      
+ 256   2                      /*系统任务指示灯业务代码*/
+ 257   2                      if(timTipsSYS_Cnt < Period_TipsSYS)timTipsSYS_Cnt ++;
+ 258   2                      else{
+ 259   3                      
+ 260   3                              timTipsSYS_Cnt = 0;
+ 261   3                              
+ 262   3                              switch(SYS_status_Mode){
+ 263   4                              
+ 264   4                                      case statusMode_Reset:{
+ 265   5                                              
+ 266   5                                              static u8 cnt_A = 1;
+ 267   5                                              
+ 268   5                                              if(--cnt_A);
+ 269   5                                              else{
+ 270   6                                              
+ 271   6                                                      cnt_A = 1;
+ 272   6                                                      led_Act(red, led_flip);
+ 273   6                                              }
+ 274   5                                      }break;
+ 275   4                                      
+ 276   4                                      case statusMode_smartLink:{
+ 277   5                                              
+ 278   5                                              static u8 cnt_B = 4;
+ 279   5                                              
+ 280   5                                              if(--cnt_B){
+ 281   6                                                      
+ 282   6                                                      if(!Usr_key)(cnt_B > 1)?(led_Act(red, led_on)):(led_Act(green, led_on));
+ 283   6                                                      else{
+ 284   7                                                      
+ 285   7                                                              led_Act(red, led_on);
+ 286   7                                                      }
+ 287   6                                              }
+ 288   5                                              else{
+ 289   6                                              
+ 290   6                                                      cnt_B = 4;
+ 291   6                                              }
+ 292   5                                      }break;
+ 293   4                                      
+ 294   4                                      case statusMode_ftRecover:{
+ 295   5                                      
+ 296   5                                              static u8 cnt_B = 5;
+ 297   5                                              
+ 298   5                                              if(--cnt_B){
+ 299   6                                              
+ 300   6                                                      if(!Usr_key)(cnt_B > 2)?(led_Act(red, led_on)):(led_Act(blue, led_on));
+ 301   6                                                      else{
+ 302   7                                                      
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 6   
+
+ 303   7                                                              led_Act(red, led_on);
+ 304   7                                                      }
+ 305   6                                              }
+ 306   5                                              else{
+ 307   6                                              
+ 308   6                                                      cnt_B = 5;
+ 309   6                                              }
+ 310   5                                      }break;
+ 311   4                                      
+ 312   4                                      case statusMode_standBy:{
+ 313   5                                      
+ 314   5                                              static u8 cnt_D = 3;
+ 315   5                                              
+ 316   5                                              if(--cnt_D){
+ 317   6                                              
+ 318   6                                                      (cnt_D > 1)?(led_darkAll()):(led_Act(red, led_on));
+ 319   6                                              }
+ 320   5                                              else{
+ 321   6                                              
+ 322   6                                                      cnt_D = 3;
+ 323   6                                              }
+ 324   5                                      }break;
+ 325   4                                      
+ 326   4                                      case statusMode_apSwitch:{
+ 327   5                                      
+ 328   5                                              led_Act(red, led_on);
+ 329   5                                      }break;
+ 330   4                                      
+ 331   4                                      default:{
+ 332   5                                      
+ 333   5                                              //提示动作保留
+ 334   5                                      }break;
+ 335   4                              }
+ 336   3                      }
+ 337   2                      
+ 338   2                      /*指纹模块业务代码*/
+ 339   2                      if(Mode_umAdd_timeOutcnt)Mode_umAdd_timeOutcnt --;
+ 340   2                      if(FPmodeCmpTips_cnt)FPmodeCmpTips_cnt --;
+ 341   2                      
+ 342   2                      /*继电器业务代码*/
+ 343   2                      if(relayTIM.tim_EN){
+ 344   3                      
+ 345   3                              if(timRelay_Cnt < relayTIM.tim_Period)timRelay_Cnt++;
+ 346   3                              else{
+ 347   4                                      
+ 348   4                                      timRelay_Cnt    = 0;
+ 349   4                                      relayTIM.tim_EN = 0;
+ 350   4                                      
+ 351   4                                      (switch_NONC_method)?(status_Relay = actRelay_ON):(status_Relay = actRelay_OFF);
+ 352   4                                      CON_RELAY               = status_Relay;
+ 353   4                              }
+ 354   3                      }else{
+ 355   3                      
+ 356   3                              timRelay_Cnt = 0;
+ 357   3                      }
+ 358   2                      
+ 359   2                      /*WIFI模块功能引脚模拟按键计数业务区*/
+ 360   2                      if(funKey_WIFI_cnt)funKey_WIFI_cnt --;
+ 361   2                      else{
+ 362   3                      
+ 363   3                              WIFI_funcPIN_nReload = WIFI_pinDISEN;   //WIFI外部引脚控制业务
+ 364   3                      }
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 7   
+
+ 365   2                      
+ 366   2                      /*用户按键时长计数*/
+ 367   2                      if(usrKeyCount_EN)usrKeyCount ++;
+ 368   2              }
+ 369   1              
+ 370   1              //***************串口接收超时时长计数*******************************//
+ 371   1              if(rxTout_count_EN){
+ 372   2              
+ 373   2                      if(rxTout_count < TimeOutSet1)rxTout_count ++;
+ 374   2                      else{
+ 375   3                              
+ 376   3                              if(!uartRX_toutFLG){
+ 377   4                              
+ 378   4                                      uartRX_toutFLG = 1;
+ 379   4                                      
+ 380   4                                      memset(datsRcv_ZIGB.rcvDats, 0xff, sizeof(char) * COM_RX1_Lenth);
+ 381   4                                      memcpy(datsRcv_ZIGB.rcvDats, RX1_Buffer, datsRcv_length);
+ 382   4                                      datsRcv_ZIGB.rcvDatsLen = datsRcv_length;
+ 383   4                              }
+ 384   3                              rxTout_count_EN = 0;
+ 385   3                      }
+ 386   2              }
+ 387   1      }
+ 388          
+ 389          ///********************* Timer1中断函数************************/
+ 390          //void timer1_Rountine (void) interrupt TIMER1_VECTOR
+ 391          //{
+ 392          //      static u16      tim_Cnt         = 0;
+ 393          //      const  u16      Period_Tips = 200;
+ 394          //      
+ 395          //      if(tim_Cnt < Period_Tips)tim_Cnt ++;
+ 396          //      else{
+ 397          //      
+ 398          //              tim_Cnt = 0;
+ 399          //              
+ 400          //              led_Act(green, led_flip);
+ 401          //      }
+ 402          //}
+ 403          
+ 404          ///********************* Timer2中断函数************************/
+ 405          //void timer2_Rountine (void) interrupt TIMER2_VECTOR
+ 406          //{
+ 407          //      static u16      tim_Cnt         = 0;
+ 408          //      const  u16      Period_Tips = 200;
+ 409          //      
+ 410          //      if(tim_Cnt < Period_Tips)tim_Cnt ++;
+ 411          //      else{
+ 412          //      
+ 413          //              tim_Cnt = 0;
+ 414          //              
+ 415          //              led_Act(blue, led_flip);
+ 416          //      }       
+ 417          //}
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    799    ----
+   CONSTANT SIZE    =      1    ----
+   XDATA SIZE       =     12       2
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.54   APPTIMER                                                              08/17/2018 17:16:37 PAGE 8   
+
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

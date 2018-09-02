@@ -1,0 +1,8 @@
+"User_main.obj",
+"Tips.obj",
+"sensor_FP.obj",
+"usrKin.obj",
+"Relay.obj",
+"dataTrans.obj" 
+TO "sw_FP&WIFI" 
+RAMSIZE(256) 

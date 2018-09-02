@@ -1,0 +1,409 @@
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE WIFI_LPT220
+OBJECT MODULE PLACED IN .\Output\wifi_LPT220.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE data_Trans\wifi_LPT220.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Us
+                    -r;.\Usr_lib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\wifi_LPT220.lst) OBJECT(.\Output\wifi_LPT2
+                    -20.obj)
+
+line level    source
+
+   1          #include "wifi_LPT220.h"
+   2          
+   3          #include "dataTrans.h"
+   4          #include "datasReference.h"
+   5          #include "usrKin.h"
+   6          #include "pars_Method.h"
+   7          #include "sensor_FP.h"
+   8          #include "Tips.h"
+   9          #include "Relay.h"
+  10          
+  11          #include "delay.h"
+  12          #include "eeprom.h"
+  13          #include "USART.h"
+  14          #include "soft_uart.h"
+  15          
+  16          #include "string.h"
+  17          #include "stdio.h"
+  18          
+  19          //*******************MAC_ID引用区*****************************/
+  20          extern u8                               xdata MAC_ID[6];
+  21          
+  22          //*******************拨码变量引用区***************************/
+  23          extern u8 idata                 val_DcodeCfm;
+  24          
+  25          //*******************串口变量引用区***************************/
+  26          extern COMx_Define              COM1;
+  27          
+  28          //*******************指纹模块变量引用区***********************/
+  29          extern threadFP_Mode    process_FPworkMode;             //用于WMODE切换时关闭指纹模块工作
+  30          
+  31          //*******************数据传输变量引用区***********************/
+  32          extern bit                              deviceLock_flag;                //设备锁标志
+  33          
+  34          /********************本地文件变量创建区******************/
+  35          unsigned int xdata funKey_WIFI_cnt              = 0;    //wifi模块物理按键连接引脚模拟按键时长计数值
+  36          bit                                IF_wifiConfigCMP_FLG = 0;    //WIFI配置初始化完成标志
+  37          
+  38          status_Mode                SYS_status_Mode              = statusMode_NULL;      //系统状态指示
+  39          
+  40          /*/------------------------------------------------------/*/
+  41          #define cmdAT_packLenth 5
+  42          const datsAttr_wifiInit wifiCMD_dats[cmdAT_packLenth] = {               //顺序禁止更改！！！
+  43          
+  44                  {{"AT+E\r\n"},                                                                  {"AT+E\r\n\r+ok", "+ok"},                               {10,3},         500},
+  45                  {{"AT+WMODE=AP\r\n"},                                                   {"+ok\r\n",     "ok"},                                          {5,2},          500},
+  46                  {{"AT+WMODE=STA\r\n"},                                                  {"+ok\r\n",     "ok"},                                          {5,2},          500},
+  47                  {{"AT+Z\r\n"},                                                                  {"+ok\r\n",     "ok"},                                          {5,2},          500},
+  48                  
+  49                  {{"AT+NETP=UDP,SERVER,8866,192.168.5.1\r\n"},   {"+ok\r\n",     "ok"},                                          {5,2},          500},
+  50          };
+  51          
+  52          /*********************WIFI模块控制引脚初始化******************/
+  53          void WIFI_pinInit(void){
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 2   
+
+  54   1              
+  55   1              P1M1 &= 0x7F; 
+  56   1              P1M0 |= 0x80;
+  57   1              
+  58   1              P1M1 &= 0xFB; 
+  59   1              P1M0 |= 0x04;
+  60   1              
+  61   1              P1M1 |= 0x08; 
+  62   1              P1M0 &= 0xF3;
+  63   1              
+  64   1              WIFI_funcPIN_nRst = WIFI_funcPIN_nReload = WIFI_pinDISEN;
+  65   1      }
+  66          
+  67          /*********************WIFI模块硬件控制smartlink******************/
+  68          void WIFI_hwSmartLink(void){
+  69   1              
+  70   1              //重新解开设备锁
+  71   1              {
+  72   2                      u8 deviceLock_IF = 0;
+  73   2                      
+  74   2                      deviceLock_flag  = 0;
+  75   2                      coverEEPROM_write_n(EEPROM_ADDR_deviceLockFLAG, &deviceLock_IF, 1);
+  76   2              }
+  77   1              
+  78   1              WIFI_funcPIN_nReload = WIFI_pinEN;
+  79   1              funKey_WIFI_cnt = 1000;
+  80   1              LogString("WIFI模块smartlink已启动！\n");
+  81   1              
+  82   1              beepTips_s(3, 20, 6);
+  83   1              
+  84   1      //      SYS_status_Mode         = statusMode_NULL;                      //系统状态更新恢复至初始空
+  85   1      //      process_FPworkMode      = work_Mode_umDetect;           //指纹模块工作模式恢复到主动检测模式
+  86   1      }
+  87          
+  88          /*********************WIFI模块硬件控制恢复出厂设置******************/
+  89          void WIFI_hwRestoreFactory(void){
+  90   1      
+  91   1              WIFI_funcPIN_nReload = WIFI_pinEN;
+  92   1              funKey_WIFI_cnt = 5000;
+  93   1              LogString("WIFI模块恢复出厂设置！\n");
+  94   1              
+  95   1              relay_Act(relay_off, 0); //关闭继电器
+  96   1              
+  97   1              Beep_Tips(3, 8, 3, 100, 0);             //提示，语句下置，与上面动作同步进行
+  98   1              delayMs(2000);
+  99   1              
+ 100   1      //      SYS_status_Mode         = statusMode_NULL;                      //系统状态更新恢复至初始空
+ 101   1      //      process_FPworkMode      = work_Mode_umDetect;           //指纹模块工作模式恢复到主动检测模式
+ 102   1      }
+ 103          
+ 104          /*********************退透传******************/
+ 105          bit WIFI_ENTM_OUT(unsigned char repeatLoop){
+ 106   1              
+ 107   1              u8 loopOut = repeatLoop;
+ 108   1              
+ 109   1              while(SBUF != 'a' && (-- loopOut)){
+ 110   2              
+ 111   2                      uartObjWIFI_Send_Byte('+');
+ 112   2                      delayMs(200);
+ 113   2              }
+ 114   1              
+ 115   1              if(!loopOut)return 0;
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 3   
+
+ 116   1              else loopOut = repeatLoop;
+ 117   1              
+ 118   1              while(SBUF != 'A' && (-- loopOut)){
+ 119   2              
+ 120   2                      uartObjWIFI_Send_Byte('a');
+ 121   2                      delayMs(100);
+ 122   2              }
+ 123   1              
+ 124   1              if(!loopOut)return 0;
+ 125   1              else return 1;
+ 126   1              
+ 127   1              return 0;
+ 128   1      }
+ 129          
+ 130          /*********************单条AT指令下达及验证响应******************/
+ 131          bit cmdAT_validation(char *cmd, char *reply[2], unsigned char replyLen[2], unsigned int timeWait, unsigned
+             - char repeatLoop){
+ 132   1      
+ 133   1              unsigned char loop      = 0,
+ 134   1                                        loopa = 0;
+ 135   1              
+ 136   1              u16 Local_Delay = 0;            
+ 137   1              
+ 138   1              uartRX_toutFLG = 0;
+ 139   1              for(loop = 0; loop < repeatLoop; loop ++){
+ 140   2                      
+ 141   2                      Local_Delay = timeWait; 
+ 142   2              
+ 143   2                      uartObjWIFI_Send_String(cmd, strlen(cmd));
+ 144   2                      
+ 145   2                      while(Local_Delay --){
+ 146   3                      
+ 147   3                              delayMs(2);
+ 148   3                              
+ 149   3                              if(uartRX_toutFLG){
+ 150   4                              
+ 151   4                                      uartRX_toutFLG = 0;
+ 152   4                                      for(loopa = 0; loopa < 2; loopa ++){
+ 153   5                                      
+ 154   5                                              if(memmem(datsRcv_ZIGB.rcvDats, datsRcv_ZIGB.rcvDatsLen, reply[loopa], replyLen[loopa])){
+ 155   6                                                      
+ 156   6                                                      return 1;
+ 157   6                                              }       
+ 158   5                                      }       
+ 159   4                              }               
+ 160   3                      }
+ 161   2              }       
+ 162   1              
+ 163   1              return 0;
+ 164   1      }
+ 165          
+ 166          /*********************单条AT指令下达及验证响应——形参结构体打包******************/
+ 167          bit cmdPackAT_validation(const datsAttr_wifiInit cmdPack, const u8 repeatLoop){
+ 168   1      
+ 169   1              return cmdAT_validation(cmdPack.wifiInit_reqCMD,
+ 170   1                                                              cmdPack.wifiInit_REPLY,
+ 171   1                                                              cmdPack.REPLY_DATLENTAB,
+ 172   1                                                              cmdPack.timeTab_waitAnsr,
+ 173   1                                                              repeatLoop);
+ 174   1      }
+ 175          
+ 176          /*********************WIFI模块网络参数配置初始化******************/
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 4   
+
+ 177          bit WIFI_configInit(void){
+ 178   1              
+ 179   1              u8 xdata serverIP_temp[4]       = {0};
+ 180   1              u8 xdata ATCMD_temp[40]         = {0};
+ 181   1              
+ 182   1              u16 data tOut_cnt                       = 5000;
+ 183   1              
+ 184   1              static u8 reInit_loop = 0;
+ 185   1              
+ 186   1              WIFI_funcPIN_nRst       = WIFI_pinEN;   //硬件复位一次
+ 187   1              delayMs(200);
+ 188   1              WIFI_funcPIN_nRst       = WIFI_pinDISEN;
+ 189   1              delayMs(3000);
+ 190   1              WIFI_funcPIN_nReload = WIFI_pinEN;
+ 191   1              delayMs(1000);
+ 192   1              WIFI_funcPIN_nReload = WIFI_pinDISEN;
+ 193   1              
+ 194   1              if(reInit_loop < 3)reInit_loop ++;
+ 195   1              else{
+ 196   2              
+ 197   2                      reInit_loop = 0;
+ 198   2                      WIFI_funcPIN_nReload = WIFI_pinEN;
+ 199   2                      delayMs(7000);
+ 200   2                      WIFI_funcPIN_nReload = WIFI_pinDISEN;
+ 201   2                      delayMs(3000);
+ 202   2              }
+ 203   1      //      WIFI_funcPIN_nReload = WIFI_pinEN;
+ 204   1      //      delayMs(5000);
+ 205   1      //      WIFI_funcPIN_nReload = WIFI_pinDISEN;
+ 206   1      
+ 207   1      //      delayMs(5000);
+ 208   1              
+ 209   1              while(WIFI_tipsPIN_nReady && (tOut_cnt --))delayMs(1);
+ 210   1              if(!tOut_cnt)return 0;
+ 211   1              delayMs(200);
+ 212   1      
+ 213   1              if(!WIFI_ENTM_OUT(15))return 0;                                                         //退透传
+ 214   1              if(!cmdPackAT_validation(wifiCMD_dats[0], 5))return 0;          //消回传
+ 215   1              
+ 216   1              /*AP模式废除*/
+ 217   1              if(!Dcode0){    //WMODE配置
+ 218   2      //      if(1){  //WMODE配置
+ 219   2                      
+ 220   2                      if(!cmdPackAT_validation(wifiCMD_dats[1], 5))return 0;
+ 221   2                      
+ 222   2                      sprintf(ATCMD_temp, "AT+WAP=11BGN,LANBON_FPSW_%d,AUTO\r\n", (int)MAC_ID[5]);
+ 223   2                      if(!cmdAT_validation(ATCMD_temp,                                                //AP_SSID配置
+ 224   2                                                               wifiCMD_dats[4].wifiInit_REPLY,
+ 225   2                                                               wifiCMD_dats[4].REPLY_DATLENTAB,
+ 226   2                                                               wifiCMD_dats[4].timeTab_waitAnsr,
+ 227   2                                                               5))return 0; 
+ 228   2                      
+ 229   2                      
+ 230   2                      sprintf(ATCMD_temp, "AT+WAKEY=WPA2PSK,AES,lanbon123\r\n");
+ 231   2                      if(!cmdAT_validation(ATCMD_temp,                                                //AP_密码配置
+ 232   2                                                               wifiCMD_dats[4].wifiInit_REPLY,
+ 233   2                                                               wifiCMD_dats[4].REPLY_DATLENTAB,
+ 234   2                                                               wifiCMD_dats[4].timeTab_waitAnsr,
+ 235   2                                                               5))return 0; 
+ 236   2                      
+ 237   2                      IF_wifiConfigCMP_FLG = 1;       //WIFI工作模式配置标志预置
+ 238   2                      
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 5   
+
+ 239   2              }else{
+ 240   2              
+ 241   2                      if(!cmdPackAT_validation(wifiCMD_dats[2], 5))return 0;
+ 242   2              }
+ 243   1              
+ 244   1              if(!cmdPackAT_validation(wifiCMD_dats[4], 5))return 0;  //socket_A配置
+ 245   1              
+ 246   1              EEPROM_read_n(EEPROM_ADDR_serverIP_record, &serverIP_temp[0], 4);
+ 247   1              sprintf(ATCMD_temp, "AT+SOCKB=UDP,80,%d.%d.%d.%d\r\n", (int)serverIP_temp[0], 
+ 248   1                                                                                                                         (int)serverIP_temp[1], 
+ 249   1                                                                                                                         (int)serverIP_temp[2], 
+ 250   1                                                                                                                         (int)serverIP_temp[3]);
+ 251   1                                                                                                                         
+ 252   1              if(!cmdAT_validation(ATCMD_temp,                                                //socket_B配置
+ 253   1                                                       wifiCMD_dats[4].wifiInit_REPLY,
+ 254   1                                                       wifiCMD_dats[4].REPLY_DATLENTAB,
+ 255   1                                                       wifiCMD_dats[4].timeTab_waitAnsr,
+ 256   1                                                       5))return 0; 
+ 257   1              
+ 258   1                      
+ 259   1      //      if(!cmdPackAT_validation(wifiCMD_dats[3], 5))return 0;          //wifi重启
+ 260   1              
+ 261   1              uartObjWIFI_Send_String(wifiCMD_dats[3].wifiInit_reqCMD, strlen(wifiCMD_dats[3].wifiInit_reqCMD));
+ 262   1              delayMs(200);
+ 263   1              uartObjWIFI_Send_String(wifiCMD_dats[3].wifiInit_reqCMD, strlen(wifiCMD_dats[3].wifiInit_reqCMD));
+ 264   1              
+ 265   1              return 1;
+ 266   1      }
+ 267          
+ 268          /*********************WMODE更变******************/
+ 269          bit WIFI_WMODE_CHG(bit ifAP){
+ 270   1              
+ 271   1              u8 xdata str_temp[40] = {0}; 
+ 272   1              
+ 273   1              if(!IF_wifiConfigCMP_FLG){              //判断开机已经初始化判断
+ 274   2                      
+ 275   2                      u16 data tOut_cnt       = 5000;
+ 276   2                      
+ 277   2                      process_FPworkMode      = work_Mode_NULL;                       //指纹模块失能
+ 278   2                      SYS_status_Mode         = statusMode_apSwitch;          //系统状态更新
+ 279   2                      
+ 280   2                      WIFI_funcPIN_nRst       = WIFI_pinEN;   //硬件复位一次
+ 281   2                      delayMs(200);
+ 282   2                      WIFI_funcPIN_nRst       = WIFI_pinDISEN;
+ 283   2                      delayMs(3000);
+ 284   2                      WIFI_funcPIN_nReload = WIFI_pinEN;
+ 285   2                      delayMs(1000);
+ 286   2                      WIFI_funcPIN_nReload = WIFI_pinDISEN;
+ 287   2                      
+ 288   2                      while(WIFI_tipsPIN_nReady && (tOut_cnt --))delayMs(10);
+ 289   2                      if(!tOut_cnt)return 0;
+ 290   2                      
+ 291   2                      delayMs(1000);
+ 292   2              
+ 293   2                      if(!WIFI_ENTM_OUT(10))return 0;                                                         //退透传
+ 294   2                      if(!cmdPackAT_validation(wifiCMD_dats[0], 5))return 0;          //消回传
+ 295   2                      
+ 296   2                      if(ifAP){
+ 297   3                                      
+ 298   3                              if(!cmdPackAT_validation(wifiCMD_dats[1], 5))return 0;  //配置到AP模式
+ 299   3                              
+ 300   3                              sprintf(str_temp, "AT+WAP=11BGN,LANBON_FPSW_%d,AUTO\r\n", (int)MAC_ID[5]);
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 6   
+
+ 301   3                              if(!cmdAT_validation(str_temp,                                          //AP_SSID配置
+ 302   3                                                                       wifiCMD_dats[4].wifiInit_REPLY,
+ 303   3                                                                       wifiCMD_dats[4].REPLY_DATLENTAB,
+ 304   3                                                                       wifiCMD_dats[4].timeTab_waitAnsr,
+ 305   3                                                                       5))return 0; 
+ 306   3                              
+ 307   3                              
+ 308   3                              sprintf(str_temp, "AT+WAKEY=WPA2PSK,AES,lanbon123\r\n");
+ 309   3                              if(!cmdAT_validation(str_temp,                                          //AP_密码配置
+ 310   3                                                                       wifiCMD_dats[4].wifiInit_REPLY,
+ 311   3                                                                       wifiCMD_dats[4].REPLY_DATLENTAB,
+ 312   3                                                                       wifiCMD_dats[4].timeTab_waitAnsr,
+ 313   3                                                                       5))return 0; 
+ 314   3                      }else{
+ 315   3      
+ 316   3                              if(!cmdPackAT_validation(wifiCMD_dats[2], 5))return 0;  //配置到STA模式
+ 317   3                      }
+ 318   2                      
+ 319   2      //              if(!cmdPackAT_validation(wifiCMD_dats[3], 5))return 0;          //wifi重启
+ 320   2                      
+ 321   2                      uartObjWIFI_Send_String(wifiCMD_dats[3].wifiInit_reqCMD, strlen(wifiCMD_dats[3].wifiInit_reqCMD));
+ 322   2                      delayMs(200);
+ 323   2                      uartObjWIFI_Send_String(wifiCMD_dats[3].wifiInit_reqCMD, strlen(wifiCMD_dats[3].wifiInit_reqCMD));
+ 324   2                      
+ 325   2              }else{
+ 326   2              
+ 327   2                      IF_wifiConfigCMP_FLG = 0;
+ 328   2              }       
+ 329   1              
+ 330   1              return 1;
+ 331   1      }
+ 332          
+ 333          /*********************UDP_IP更变******************/
+ 334          bit WIFI_serverUDP_CHG(unsigned char ip[4]){
+ 335   1      
+ 336   1              unsigned char idata ipNem_temp[40]              = {0},
+ 337   1                                        idata ipRecord_temp[4]        = {0};
+ 338   1                                        
+ 339   1              EEPROM_read_n(EEPROM_ADDR_serverIP_record, ipRecord_temp, 4);
+ 340   1              if(!memcmp(ipRecord_temp, ip, 4))return 1;
+ 341   1              else{
+ 342   2                      
+ 343   2                      coverEEPROM_write_n(EEPROM_ADDR_serverIP_record, ip, 4);
+ 344   2              
+ 345   2                      sprintf(ipNem_temp, "AT+SOCKB=UDP,80,%d.%d.%d.%d\r\n", (int)ip[0], (int)ip[1], (int)ip[2], (int)ip[3]);
+ 346   2                      
+ 347   2                      if(!WIFI_ENTM_OUT(10))return 0;
+ 348   2                      if(!cmdPackAT_validation(wifiCMD_dats[0], 5))return 0;
+ 349   2                      
+ 350   2                      if(!cmdAT_validation(ipNem_temp,                                                //socket_B配置
+ 351   2                                                               wifiCMD_dats[4].wifiInit_REPLY,
+ 352   2                                                               wifiCMD_dats[4].REPLY_DATLENTAB,
+ 353   2                                                               wifiCMD_dats[4].timeTab_waitAnsr,
+ 354   2                                                               5))return 0; 
+ 355   2                      
+ 356   2      //              if(!cmdPackAT_validation(wifiCMD_dats[3], 5))return 0;
+ 357   2                      
+ 358   2                      uartObjWIFI_Send_String(wifiCMD_dats[3].wifiInit_reqCMD, strlen(wifiCMD_dats[3].wifiInit_reqCMD));
+ 359   2                      delayMs(200);
+ 360   2                      uartObjWIFI_Send_String(wifiCMD_dats[3].wifiInit_reqCMD, strlen(wifiCMD_dats[3].wifiInit_reqCMD));
+ 361   2                      while(WIFI_tipsPIN_nReady);
+ 362   2                      delayMs(3000);
+C51 COMPILER V9.54   WIFI_LPT220                                                           08/17/2018 17:16:38 PAGE 7   
+
+ 363   2                      
+ 364   2                      return 1;
+ 365   2              }
+ 366   1      }
+ 367          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1824    ----
+   CONSTANT SIZE    =    382    ----
+   XDATA SIZE       =     69     120
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       4
+   IDATA SIZE       =   ----      44
+   BIT SIZE         =      1       1
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

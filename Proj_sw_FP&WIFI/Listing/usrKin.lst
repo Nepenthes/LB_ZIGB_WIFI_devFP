@@ -1,0 +1,307 @@
+C51 COMPILER V9.54   USRKIN                                                                08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE USRKIN
+OBJECT MODULE PLACED IN .\Output\usrKin.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Sensor\usrKin.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_l
+                    -ib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\usrKin.lst) OBJECT(.\Output\usrKin.obj)
+
+line level    source
+
+   1          #include "usrKin.h"
+   2          #include "Tips.h"
+   3          
+   4          #include "sensor_FP.h"
+   5          #include "wifi_LPT220.h"
+   6          #include "relay.h"
+   7          #include "delay.h"
+   8          
+   9          #include "soft_uart.h"
+  10          
+  11          #include "stdio.h"
+  12          #include "string.h"
+  13          
+  14          //*********************指纹模块相关变量引用区******************/
+  15          extern threadFP_Mode    process_FPworkMode;
+  16          
+  17          //*********************开关定时属性变量引用区******************/
+  18          extern rly_timFun               relayTIM;
+  19          
+  20          //*********************继电器驱动相关变量引用******************/
+  21          extern threadRelay_Mode process_RelayWorkMode;
+  22          extern status_ifSave    relayStatus_ifSave;
+  23          extern bit                              status_Relay;
+  24          
+  25          /**********************本地文件变量定义区**********************/
+  26          u8 idata val_DcodeCfm                   = 0;  //拨码值
+  27          bit              ledBackground_method   = 0;  //背景灯颜色方案 //为1时：开-绿 关-蓝   为0时：开-蓝 关-绿
+  28          bit              switch_NONC_method             = 0;
+  29          bit              usrKeyCount_EN                 = 0;
+  30          u16              usrKeyCount                    = 0;
+  31          
+  32          u8 DcodeScan_oneShoot(void){
+  33   1      
+  34   1              u8 val_Dcode = 0;
+  35   1              
+  36   1              if(!Dcode0)val_Dcode |= 1 << 0;
+  37   1              else val_Dcode &= ~(1 << 0);
+  38   1              
+  39   1              if(!Dcode1)val_Dcode |= 1 << 1;
+  40   1              else val_Dcode &= ~(1 << 1);
+  41   1              
+  42   1              if(!Dcode2)val_Dcode |= 1 << 2;
+  43   1              else val_Dcode &= ~(1 << 2);
+  44   1              
+  45   1              if(!Dcode3)val_Dcode |= 1 << 3;
+  46   1              else val_Dcode &= ~(1 << 3);
+  47   1              
+  48   1              if(!Dcode4)val_Dcode |= 1 << 4;
+  49   1              else val_Dcode &= ~(1 << 4);
+  50   1              
+  51   1              if(!Dcode5)val_Dcode |= 1 << 5;
+  52   1              else val_Dcode &= ~(1 << 5);
+  53   1              
+  54   1              return val_Dcode;
+C51 COMPILER V9.54   USRKIN                                                                08/17/2018 17:16:37 PAGE 2   
+
+  55   1      }
+  56          
+  57          bit UsrKEYScan_oneShoot(void){
+  58   1      
+  59   1              return Usr_key;
+  60   1      }
+  61          
+  62          void DcodeScan(void){
+  63   1      
+  64   1              static u8       val_Dcode_Local         = 0,
+  65   1                                      comfirm_Cnt                     = 0;
+  66   1              const  u8       comfirm_Period          = 3;    //消抖时间因数——取决于主线程调度周期
+  67   1                      
+  68   1                         u8   val_Dcode_differ        = 0;
+  69   1              
+  70   1                         bit  val_CHG                         = 0;
+  71   1              
+  72   1              val_DcodeCfm = DcodeScan_oneShoot();
+  73   1              
+  74   1              if(val_Dcode_Local != val_DcodeCfm){
+  75   2              
+  76   2                      if(comfirm_Cnt < comfirm_Period)comfirm_Cnt ++;
+  77   2                      else{
+  78   3                      
+  79   3                              comfirm_Cnt = 0;
+  80   3                              val_CHG         = 1;
+  81   3                      }
+  82   2              }
+  83   1              
+  84   1              if(val_CHG){
+  85   2                      
+  86   2                      val_CHG                         = 0;
+  87   2              
+  88   2                      val_Dcode_differ        = val_Dcode_Local ^ val_DcodeCfm;
+  89   2                      val_Dcode_Local         = val_DcodeCfm;
+  90   2                      
+  91   2                      beeps(0);
+  92   2      
+  93   2                      if(val_Dcode_differ & Dcode_FLG_ifAP){
+  94   3                              
+  95   3                              u8 tOut = 3; 
+  96   3                      
+  97   3                              if(val_Dcode_Local & Dcode_FLG_ifAP){
+  98   4                              
+  99   4                                      while(!WIFI_WMODE_CHG(1) && tOut){delayMs(2000); tOut --;}
+ 100   4                                      LogString("WIFI模块已配置至 AP模式,等待重启\n");
+ 101   4                              }else{
+ 102   4                              
+ 103   4                                      while(!WIFI_WMODE_CHG(0) && tOut){delayMs(2000);  tOut --;}
+ 104   4                                      LogString("WIFI模块已配置至 STA模式,等待重启\n");
+ 105   4                              }
+ 106   3                              
+ 107   3                              if(!tOut)((void(code *)(void))0x0000)();
+ 108   3                              
+ 109   3                              process_FPworkMode      = work_Mode_umDetect;           //指纹模块工作模式恢复到主动检测模式
+ 110   3                              SYS_status_Mode         = statusMode_NULL;                      //系统状态更新恢复至初始空
+ 111   3                      }
+ 112   2                      
+ 113   2                      if(val_Dcode_differ & Dcode_FLG_ifNONC){
+ 114   3                              
+ 115   3                              if(Dcode_modeMix(val_Dcode_Local) == 2 || Dcode_modeMix(val_Dcode_Local) == 3){ //延时模式下 NONC有效
+ 116   4                              
+C51 COMPILER V9.54   USRKIN                                                                08/17/2018 17:16:37 PAGE 3   
+
+ 117   4                                      status_Relay = !status_Relay;
+ 118   4                                      CON_RELAY = status_Relay;
+ 119   4                              
+ 120   4                                      if(val_Dcode_Local & Dcode_FLG_ifNONC){
+ 121   5                                              
+ 122   5      //                                      ledBackground_method = 1;
+ 123   5                                              switch_NONC_method = 1;
+ 124   5                                              LogString("切换至背光方案A.\n");
+ 125   5                                              
+ 126   5                                      }else{
+ 127   5                                      
+ 128   5      //                                      ledBackground_method = 0;
+ 129   5                                              switch_NONC_method = 0;
+ 130   5                                              LogString("切换至背光方案B.\n");
+ 131   5                                      }
+ 132   4                              }
+ 133   3                      }
+ 134   2                      
+ 135   2                      if(val_Dcode_differ & Dcode_FLG_saveRelay_MODEX){
+ 136   3                      
+ 137   3                              switch(Dcode_modeMix(val_Dcode_Local)){
+ 138   4                              
+ 139   4                                      case 0:{
+ 140   5                                      
+ 141   5                                              process_RelayWorkMode = work_Mode_flip;
+ 142   5                                              relayStatus_ifSave        = statusSave_disable;
+ 143   5                                              LogString("开关已切换至翻转模式.\n");
+ 144   5                                              LogString("开关记忆功能已关闭.\n");
+ 145   5                                              
+ 146   5                                      }break;
+ 147   4                                              
+ 148   4                                      case 1:{
+ 149   5                                      
+ 150   5                                              process_RelayWorkMode = work_Mode_flip;
+ 151   5                                              relayStatus_ifSave        = statusSave_enable;
+ 152   5                                              LogString("开关记忆功能已开启.\n");
+ 153   5                                              
+ 154   5                                      }break;
+ 155   4                                              
+ 156   4                                      case 2:{
+ 157   5                                      
+ 158   5                                              process_RelayWorkMode = work_Mode_conuter;
+ 159   5                                              relayStatus_ifSave        = statusSave_disable;
+ 160   5                                              LogString("开关已切换至延时模式.\n");
+ 161   5                                              
+ 162   5                                      }break;
+ 163   4                                              
+ 164   4                                      case 3:{
+ 165   5                                              
+ 166   5                                              process_RelayWorkMode = work_Mode_conuter;
+ 167   5                                              relayStatus_ifSave        = statusSave_disable;                         
+ 168   5                                              LogString("开关已切换至延时模式.\n");
+ 169   5                                              LogString("延时模式下，开关记忆无意义，开关记忆功能已关闭.\n");
+ 170   5                                              
+ 171   5                                      }break;
+ 172   4                                              
+ 173   4                                      default:break;
+ 174   4                              }
+ 175   3                      }
+ 176   2                      
+ 177   2                      if(val_Dcode_differ & Dcode_FLG_swDelay){
+ 178   3                      
+C51 COMPILER V9.54   USRKIN                                                                08/17/2018 17:16:37 PAGE 4   
+
+ 179   3                              switch(Dcode_cntTim(val_Dcode_Local)){
+ 180   4                              
+ 181   4                                      case 0:{
+ 182   5                                      
+ 183   5                                              relayTIM.tim_Period = 1000;
+ 184   5                                              LogString("当前延时拨码已调至 1秒.\n");
+ 185   5                                      }break;
+ 186   4                                              
+ 187   4                                      case 1:{
+ 188   5                                      
+ 189   5                                              relayTIM.tim_Period = 3000;
+ 190   5                                              LogString("当前延时拨码已调至 3秒.\n");
+ 191   5                                      }break;
+ 192   4                                              
+ 193   4                                      case 2:{
+ 194   5                                      
+ 195   5                                              relayTIM.tim_Period = 5000;
+ 196   5                                              LogString("当前延时拨码已调至 5秒.\n");
+ 197   5                                      }break;
+ 198   4                                              
+ 199   4                                      case 3:{
+ 200   5                                      
+ 201   5                                              relayTIM.tim_Period = 10000;
+ 202   5                                              LogString("当前延时拨码已调至 10秒.\n");
+ 203   5                                      }break;
+ 204   4                                              
+ 205   4                                      default:break;
+ 206   4                              }LogString("开关处于延时模式时时生效.\n");
+ 207   3                      }
+ 208   2              }
+ 209   1      }
+ 210          
+ 211          void UsrKEYScan(funKey_Callback funCB_Short, funKey_Callback funCB_LongA, funKey_Callback funCB_LongB){
+ 212   1              
+ 213   1              code    u16     keyCfrmLoop_Short       = 1,    //短按消抖时间,据大循环而定
+ 214   1                                      keyCfrmLoop_LongA       = 3000, //长按A时间,据大循环而定
+ 215   1                                      keyCfrmLoop_LongB       = 15000,//长按B时间,据大循环而定
+ 216   1                                      keyCfrmLoop_MAX         = 60000;//计时封顶
+ 217   1              
+ 218   1              static  bit LongA_FLG = 0;
+ 219   1              static  bit LongB_FLG = 0;
+ 220   1              
+ 221   1              static  bit keyPress_FLG = 0;
+ 222   1      
+ 223   1              if(!UsrKEYScan_oneShoot()){             //选择提示
+ 224   2                      
+ 225   2                      keyPress_FLG = 1;
+ 226   2              
+ 227   2                      if(!usrKeyCount_EN) usrKeyCount_EN= 1;  //计时
+ 228   2                      
+ 229   2                      if((usrKeyCount >= keyCfrmLoop_LongA) && (usrKeyCount <= keyCfrmLoop_LongB) && !LongA_FLG){
+ 230   3                      
+ 231   3                              process_FPworkMode      = work_Mode_NULL;                       //指纹模块失能
+ 232   3                              SYS_status_Mode         = statusMode_smartLink;         //系统状态更新
+ 233   3                              
+ 234   3                              funCB_LongA();
+ 235   3                              
+ 236   3                              LongA_FLG = 1;
+ 237   3                      }       
+ 238   2                      
+ 239   2                      if((usrKeyCount >= keyCfrmLoop_LongB) && (usrKeyCount <= keyCfrmLoop_MAX) && !LongB_FLG){
+ 240   3                      
+C51 COMPILER V9.54   USRKIN                                                                08/17/2018 17:16:37 PAGE 5   
+
+ 241   3                              process_FPworkMode      = work_Mode_NULL;                       //指纹模块失能
+ 242   3                              SYS_status_Mode         = statusMode_ftRecover;         //系统状态更新
+ 243   3                              
+ 244   3                              funCB_LongB();
+ 245   3                              
+ 246   3                              LongB_FLG = 1;
+ 247   3                      }
+ 248   2                      
+ 249   2              }else{          //选择响应
+ 250   2                      
+ 251   2                      usrKeyCount_EN = 0;
+ 252   2                      
+ 253   2                      if(keyPress_FLG){
+ 254   3                      
+ 255   3                              keyPress_FLG = 0;
+ 256   3                              
+ 257   3      //                      if(usrKeyCount < keyCfrmLoop_LongA && usrKeyCount > keyCfrmLoop_Short)funCB_Short();
+ 258   3                              
+ 259   3                              usrKeyCount = 0;
+ 260   3                              LongA_FLG       = 0;
+ 261   3                              LongB_FLG       = 0;
+ 262   3                              
+ 263   3                              SYS_status_Mode         = statusMode_NULL;                      //系统状态更新恢复至初始空
+ 264   3                              process_FPworkMode      = work_Mode_umDetect;           //指纹模块工作模式恢复到主动检测模式
+ 265   3                      }
+ 266   2              }
+ 267   1      }
+*** WARNING C280 IN LINE 211 OF Sensor\usrKin.c: 'funCB_Short': unreferenced local variable
+*** WARNING C280 IN LINE 213 OF Sensor\usrKin.c: 'keyCfrmLoop_Short': unreferenced local variable
+ 268          
+ 269          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    722    ----
+   CONSTANT SIZE    =    376    ----
+   XDATA SIZE       =      4      11
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =      1    ----
+   BIT SIZE         =      6       1
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  2 WARNING(S),  0 ERROR(S)

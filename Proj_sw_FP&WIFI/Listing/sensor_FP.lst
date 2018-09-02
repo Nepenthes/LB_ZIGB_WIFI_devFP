@@ -1,0 +1,1030 @@
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE SENSOR_FP
+OBJECT MODULE PLACED IN .\Output\sensor_FP.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Sensor\sensor_FP.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Us
+                    -r_lib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\sensor_FP.lst) OBJECT(.\Output\sensor_FP.obj)
+
+line level    source
+
+   1          #include "sensor_FP.h"
+   2          #include "dataTrans.h"
+   3          #include "Relay.h"
+   4          
+   5          #include "string.h"
+   6          #include "stdio.h"
+   7          
+   8          #include "eeprom.h"
+   9          #include "soft_uart.h"
+  10          #include "delay.h"
+  11          #include "USART.h"
+  12          
+  13          #include "datasReference.h"
+  14          #include "dataTrans.h"
+  15          #include "Tips.h"
+  16          #include "pars_Method.h"
+  17          
+  18          //*********************Êý¾Ý´«Êä±äÁ¿ÒýÓÃÇø**********************/
+  19          extern  u8 xdata                        repeatTX_Len;
+  20          
+  21          //*********************¼ÌµçÆ÷Çý¶¯±äÁ¿ÒýÓÃÇø**********************/
+  22          extern  threadRelay_Mode        process_RelayWorkMode;
+  23          extern  bit                             status_Relay;
+  24          
+  25          //*********************´®¿ÚÍâÉè¿â±äÁ¿ÒýÓÃÇø********************/
+  26          
+  27          /**********************±¾µØÎÄ¼þ±äÁ¿¶¨ÒåÇø************************/
+  28          threadFP_Mode           process_FPworkMode                       = work_Mode_NULL;              //Ö¸ÎÆÄ£¿é¹¤×÷Ä£Ê½
+  29          stt_stepAdd             umNew_AddStep                            = umStepAdd_A;                 //Ö¸ÎÆÄ£¿é¹¤×÷Ä£Ê½Îª£ºÔö/¸Ä    Ä£°åÊ±£¬¶ÔÓ¦µÄ½ø³ÌÖ¸Ê¾
+  30          stt_stepAdd             umNew_AddStep_StandBy            = umStepAdd_A;                 //Ö¸ÎÆÄ£¿é¹¤×÷Ä£Ê½Îª£ºÔö/¸Ä    Ä£°åÊ±£¬¶ÔÓ¦µÄÔ¤±¸½
+             -ø³ÌÖ¸Ê¾
+  31          stt_stepDtt                     um_dttStep                                       = umStepDtt_A;                 //Ö¸ÎÆÄ£¿é¹¤×÷Ä£Ê½Îª£ºÖ÷¶¯¼ì²â Ä£°åÊ±£¬¶ÔÓ¦µÄ½ø³ÌÖ¸Ê¾
+  32          bit                                     FP_umDetect_enFLAG                       = 1;                                   //Ö¸ÎÆÄ£¿é¹¤×÷Ä£Ê½Îª£ºÖ÷¶¯¼ì²â Ä£°åÊ±£¬¹¤×÷Ê¹ÄÜ±êÖ¾£¬ÓÃÓÚÈ¨ÏÞ¶¨Ê±£¬
+             -³õÊ¼»¯Ê±¿ª·Å¼ì²â
+  33          bit                                     FPvalidation_flg                         = 0;                                   //Ö¸ÎÆÄ£¿é¹¤×÷Ä£Ê½Îª£ºÄ£°åÊ¶±ðÊ±£¬Ê¶±ðÍê³É±êÖ¾£¬ÒµÎñ´úÂëµ÷ÓÃÊ±±ØÐëÊÖ¶
+             -¯ÖÃÁã
+  34          u8                                      FP_ID                                            = FPID_NULL;                   //Ä£°åIDºÅ
+  35          
+  36          bit                             umNew_AddStepReapt_cmpHalfEN = 0;                                       //½ÓÊÕµ½Ö¸ÎÆÄ£¿éÑ§Ï°Ö¸ÁîÊ±£¬°ëÍê³É×´Ì¬Ê±ÐÅÏ¢»Ø·¢Ê¹ÄÜ
+  37          
+  38          u16     xdata                   Mode_umAdd_timeOutcnt            = 0;                                   //ÓÃÓÚÑ§Ï°Ä£Ê½Ê±³¬Ê±¼ì²â
+  39          
+  40          tipsFP_completeType FP_modeCompleteTips                  = cmp_NULL;                    //Ä£Ê½´¥·¢Íê³ÉºóTipsÀà±ð
+  41          volatile u16 xdata      FPmodeCmpTips_cnt                        = 0;                                   //Ä£Ê½´¥·¢Íê³ÉºóTips×¨ÓÃ¼ÆÊ±£¬ÐèÔÚtimerÖÐµ÷ÓÃ
+  42          u16 code                        FPmodeCmpTips_Period             = 1500;                                //Ä£Ê½´¥·¢Íê³ÉºóTips×¨ÓÃ¼ÆÊ±×î´óÖÜÆÚ
+  43          
+  44          bit                                     FP_Rcv_timeOut_FLG                       = 0;                                   //Ö¸ÎÆÄ£¿éÊý¾Ý½ÓÊÕ³¬Ê±±êÖ¾              
+  45          
+  46          volatile unsigned char idata FINGERPRINT_RECEVICE_BUFFER[24] = {255, 255, 255, 255, 255, 255, 255, 255, 25
+             -5, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255};
+  47          
+  48          /*===============================================================*/
+  49          
+  50          //FINGERPRINTÍ¨ÐÅÐ­Òé¶¨Òå
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 2   
+
+  51          unsigned char code FP_Pack_Head[6] = {0xEF,0x01,0xFF,0xFF,0xFF,0xFF};  //Ð­Òé°üÍ·
+  52          unsigned char code FP_Get_Img[6] = {0x01,0x00,0x03,0x01,0x0,0x05};    //»ñµÃÖ¸ÎÆÍ¼Ïñ¡ª¡ª¡ª¡ª1
+  53          unsigned char code FP_Img_To_Buffer1[7]={0x01,0x0,0x04,0x02,0x01,0x0,0x08}; //½«Í¼Ïñ·ÅÈëµ½BUFFER1¡ª¡ª¡ª¡ª2
+  54          unsigned char code FP_Img_To_Buffer2[7]={0x01,0x0,0x04,0x02,0x02,0x0,0x09}; //½«Í¼Ïñ·ÅÈëµ½BUFFER2¡ª¡ª¡ª¡ª¡
+             -ª3
+  55          unsigned char code FP_Reg_Model[6]={0x01,0x0,0x03,0x05,0x0,0x09}; //½«BUFFER1¸úBUFFER2ºÏ³ÉÌØÕ÷Ä£°æ¡ª¡ª¡ª¡ª
+             -4
+  56          
+  57          unsigned char code FP_Search[11]={0x01,0x0,0x08,0x04,0x01,0x0,0x0,0x03,0xA1,0x0,0xB2}; //ËÑË÷Ö¸ÎÆËÑË÷·¶Î§0
+             - - 929  ¡ª¡ª¡ª¡ª5
+  58          unsigned char code FP_Search_0_9[11]={0x01,0x0,0x08,0x04,0x01,0x0,0x0,0x0,0x09,0x0,0x17}; //ËÑË÷0-9ºÅÖ¸ÎÆ¡
+             -ª¡ª¡ª¡ª6
+  59          unsigned char code FP_Search_0_100[11]={0x01,0x0,0x08,0x04,0x01,0x0,0x0,0x0,0x64,0x0,0x72}; //ËÑË÷0-9ºÅÖ¸Î
+             -Æ¡ª¡ª¡ª¡ª6
+  60          
+  61          unsigned char code FP_Delet_All_Model[6]={0x01,0x0,0x03,0x0d,0x00,0x11};//É¾³ýÖ¸ÎÆÄ£¿éÀïËùÓÐµÄÄ£°æ¡ª¡ª¡ª¡ª
+             -7
+  62          unsigned char code FP_Templete_Num[6] ={0x01,0x00,0x03,0x1D,0x00,0x21 }; //»ñµÃÄ£°æ×ÜÊý¡ª¡ª¡ª¡ª¡ª8
+  63          
+  64          volatile unsigned char idata FP_Save_Finger[9]={0x01,0x00,0x06,0x06,0x01,0x00,0x0B,0x00,0x19};//½«BUFFER1Ö
+             -ÐµÄÌØÕ÷Âë´æ·Åµ½Ö¸¶¨µÄÎ»ÖÃ¡ª¡ª¡ª¡ª9
+  65          volatile unsigned char idata FP_Delete_Model[10]={0x01,0x00,0x07,0x0C,0x0,0x0,0x0,0x1,0x0,0x0}; //É¾³ýÖ¸¶¨
+             -µÄÄ£°æ¡ª¡ª¡ª¡ª7
+  66          
+  67          //volatile unsigned char FINGER_NUM;
+  68          /*cyacyfÔö¼Ó*/
+  69          volatile unsigned char idata FP_Load_Model[9]={0x01,0x0,0x06,0x07,0x01,0x00,0x0B,0x00,0x1A}; //½«flashÊý¾Ý
+             -¿âÖÐÖ¸¶¨IDºÅµÄÖ¸ÎÆÄ£°å¶ÁÈëµ½BUFFER1
+  70          
+  71          
+  72          /*------------------ FINGERPRINTÃüÁî×Ö --------------------------*/
+  73          
+  74          //FINGERPRINT_»ñµÃÖ¸ÎÆÍ¼ÏñÃüÁî¡ª¡ª¡ª¡ª1
+  75          void FINGERPRINT_Cmd_Get_Img(void)
+  76          {
+  77   1          unsigned char i;
+  78   1      
+  79   1          for(i=0;i<6;i++) //·¢ËÍ°üÍ·
+  80   1             uartObjFP_Send_Byte(FP_Pack_Head[i]);
+  81   1          
+  82   1          for(i=0;i<6;i++) //·¢ËÍÃüÁî 0x1d
+  83   1             uartObjFP_Send_Byte(FP_Get_Img[i]);
+  84   1      }
+  85          
+  86          //½²Í¼Ïñ×ª»»³ÉÌØÕ÷Âë´æ·ÅÔÚBuffer1ÖÐ¡ª¡ª¡ª¡ª2
+  87          void FINGERPRINT_Cmd_Img_To_Buffer1(void)
+  88          {
+  89   1                  unsigned char i;
+  90   1          
+  91   1                     for(i=0;i<6;i++)    //·¢ËÍ°üÍ·
+  92   1                       {
+  93   2                     uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+  94   2                           }
+  95   1                 
+  96   1                         for(i=0;i<7;i++)   //·¢ËÍÃüÁî ½«Í¼Ïñ×ª»»³É ÌØÕ÷Âë ´æ·ÅÔÚ CHAR_buffer1
+  97   1                   {
+  98   2                         uartObjFP_Send_Byte(FP_Img_To_Buffer1[i]);
+  99   2                           }
+ 100   1      }
+ 101          
+ 102          //½«Í¼Ïñ×ª»»³ÉÌØÕ÷Âë´æ·ÅÔÚBuffer2ÖÐ¡ª¡ª¡ª¡ª3
+ 103          void FINGERPRINT_Cmd_Img_To_Buffer2(void)
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 3   
+
+ 104          {
+ 105   1           unsigned char i;
+ 106   1                 for(i=0;i<6;i++)    //·¢ËÍ°üÍ·
+ 107   1                       {
+ 108   2                     uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 109   2                           }
+ 110   1                 
+ 111   1                         for(i=0;i<7;i++)   //·¢ËÍÃüÁî ½«Í¼Ïñ×ª»»³É ÌØÕ÷Âë ´æ·ÅÔÚ CHAR_buffer1
+ 112   1                   {
+ 113   2                         uartObjFP_Send_Byte(FP_Img_To_Buffer2[i]);
+ 114   2                           }
+ 115   1      }
+ 116          
+ 117          //½«BUFFER1 ¸ú BUFFER2 ÖÐµÄÌØÕ÷ÂëºÏ²¢³ÉÖ¸ÎÆÄ£°æ¡ª¡ª¡ª¡ª4
+ 118          void FINGERPRINT_Cmd_Reg_Model(void)
+ 119          {
+ 120   1          unsigned char i;    
+ 121   1      
+ 122   1          for(i=0;i<6;i++) //°üÍ·
+ 123   1          {
+ 124   2            uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 125   2          }
+ 126   1      
+ 127   1          for(i=0;i<6;i++) //ÃüÁîºÏ²¢Ö¸ÎÆÄ£°æ
+ 128   1          {
+ 129   2            uartObjFP_Send_Byte(FP_Reg_Model[i]);   
+ 130   2          }
+ 131   1      
+ 132   1      }
+ 133          
+ 134          //ËÑË÷È«²¿ÓÃ»§999Ã¶Ö¸ÎÆ ¡ª¡ª¡ª¡ª5
+ 135          void FINGERPRINT_Cmd_Search_Finger(void)
+ 136          {
+ 137   1             unsigned char i;    
+ 138   1                 for(i=0;i<6;i++)   //·¢ËÍÃüÁîËÑË÷Ö¸ÎÆ¿â
+ 139   1                 {
+ 140   2                    uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 141   2                         }
+ 142   1      
+ 143   1             for(i=0;i<11;i++)
+ 144   1                 {
+ 145   2                    uartObjFP_Send_Byte(FP_Search[i]);   
+ 146   2                         }
+ 147   1      
+ 148   1      
+ 149   1      }
+ 150          
+ 151          
+ 152          //ËÑË÷0-9Ã¶Ö¸ÎÆ¡ª¡ª¡ª¡ª6
+ 153          void FINGERPRINT_Cmd_Search_Finger_Admin(void)
+ 154          {
+ 155   1             unsigned char i;    
+ 156   1                 for(i=0;i<6;i++)   //·¢ËÍÃüÁîËÑË÷Ö¸ÎÆ¿â
+ 157   1                 {
+ 158   2                    uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 159   2                         }
+ 160   1      
+ 161   1             for(i=0;i<11;i++)
+ 162   1                 {
+ 163   2                    uartObjFP_Send_Byte(FP_Search_0_9[i]);   
+ 164   2                         }
+ 165   1      
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 4   
+
+ 166   1      
+ 167   1      }
+ 168          
+ 169          
+ 170          //ËÑË÷0-100Ã¶Ö¸ÎÆ¡ª¡ª¡ª¡ªcustom
+ 171          void FINGERPRINT_Cmd_Search_Finger_0_100(void)
+ 172          {
+ 173   1             unsigned char i;    
+ 174   1                 for(i=0;i<6;i++)   //·¢ËÍÃüÁîËÑË÷Ö¸ÎÆ¿â
+ 175   1                 {
+ 176   2                    uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 177   2                         }
+ 178   1      
+ 179   1             for(i=0;i<11;i++)
+ 180   1                 {
+ 181   2                    uartObjFP_Send_Byte(FP_Search_0_100[i]);   
+ 182   2                         }
+ 183   1      
+ 184   1      
+ 185   1      }
+ 186          
+ 187          //É¾³ýÖ¸ÎÆÄ£¿éÀïµÄËùÓÐÖ¸ÎÆÄ£°æ¡ª¡ª¡ª¡ª7
+ 188          void FINGERPRINT_Cmd_Delete_All_Model(void)
+ 189          {
+ 190   1           unsigned char i;    
+ 191   1      
+ 192   1          for(i=0;i<6;i++) //°üÍ·
+ 193   1            uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 194   1      
+ 195   1          for(i=0;i<6;i++) //ÃüÁîºÏ²¢Ö¸ÎÆÄ£°æ
+ 196   1            uartObjFP_Send_Byte(FP_Delet_All_Model[i]);   
+ 197   1      }
+ 198          
+ 199          
+ 200          
+ 201          //É¾³ýÖ¸ÎÆÄ£¿éÀïµÄÖ¸¶¨Ö¸ÎÆÄ£°æ¡ª¡ª²ÎÊýÎªË«×Ö½Ú¡ª¡ª¡ª¡ª7
+ 202          void FINGERPRINT_Cmd_Delete_Model(unsigned int uiID_temp)
+ 203          {
+ 204   1          volatile unsigned int uiSum_temp = 0;
+ 205   1              unsigned char i;    
+ 206   1               
+ 207   1              FP_Delete_Model[4]=(uiID_temp&0xFF00)>>8;
+ 208   1              FP_Delete_Model[5]=(uiID_temp&0x00FF);
+ 209   1              
+ 210   1              for(i=0;i<8;i++)
+ 211   1                  uiSum_temp = uiSum_temp + FP_Delete_Model[i];
+ 212   1              
+ 213   1              //UART0_Send_Byte(uiSum_temp);  
+ 214   1                              
+ 215   1              FP_Delete_Model[8]=(uiSum_temp&0xFF00)>>8;
+ 216   1              FP_Delete_Model[9]=uiSum_temp&0x00FF;
+ 217   1               
+ 218   1      
+ 219   1          for(i=0;i<6;i++) //°üÍ·
+ 220   1            uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 221   1      
+ 222   1          for(i=0;i<10;i++) //ÃüÁîºÏ²¢Ö¸ÎÆÄ£°æ
+ 223   1            uartObjFP_Send_Byte(FP_Delete_Model[i]);   
+ 224   1      }
+ 225          
+ 226          //É¾³ýÖ¸ÎÆÄ£°å-²ÎÊýÎªµ¥×Ö½Ú¡ª¡ª¡ª¡ª7
+ 227          void FP_Cmd_Delete_Model(unsigned char n)
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 5   
+
+ 228          {
+ 229   1          volatile unsigned int uiSum_temp = 0;
+ 230   1              unsigned char i;    
+ 231   1               
+ 232   1      //      FP_Delete_Model[4]=(uiID_temp&0xFF00)>>8;
+ 233   1              FP_Delete_Model[5]=(n&0xFF);
+ 234   1              
+ 235   1              for(i=0;i<8;i++)
+ 236   1                  uiSum_temp = uiSum_temp + FP_Delete_Model[i];
+ 237   1              
+ 238   1              //UART0_Send_Byte(uiSum_temp);  
+ 239   1                              
+ 240   1              FP_Delete_Model[8]=(uiSum_temp&0xFF00)>>8;
+ 241   1              FP_Delete_Model[9]=uiSum_temp&0x00FF;
+ 242   1               
+ 243   1      
+ 244   1          for(i=0;i<6;i++) //°üÍ·
+ 245   1            uartObjFP_Send_Byte(FP_Pack_Head[i]);   
+ 246   1      
+ 247   1          for(i=0;i<10;i++) //ÃüÁîºÏ²¢Ö¸ÎÆÄ£°æ
+ 248   1            uartObjFP_Send_Byte(FP_Delete_Model[i]);   
+ 249   1      }
+ 250          
+ 251          
+ 252          //»ñµÃÖ¸ÎÆÄ£°åÊýÁ¿¡ª¡ª¡ª¡ª8
+ 253          void FINGERPRINT_Cmd_Get_Templete_Num(void)
+ 254          {  unsigned int i;
+ 255   1      //   unsigned char temp[14];
+ 256   1      
+ 257   1         for(i=0;i<6;i++) //°üÍ·
+ 258   1            uartObjFP_Send_Byte(FP_Pack_Head[i]);
+ 259   1      
+ 260   1         //·¢ËÍÃüÁî 0x1d
+ 261   1         for(i=0;i<6;i++)
+ 262   1           uartObjFP_Send_Byte(FP_Templete_Num[i]);
+ 263   1         
+ 264   1        
+ 265   1      }
+ 266          
+ 267          //½ÓÊÕ·´À¡Êý¾Ý»º³å
+ 268          void FINGERPRINT_Recevice_Data(unsigned char ucLength){
+ 269   1              
+ 270   1              u8 loop = 0;
+ 271   1      
+ 272   1              for (loop = 0; loop < ucLength; loop ++){
+ 273   2      
+ 274   2                      FINGERPRINT_RECEVICE_BUFFER[loop] = UART_FP_byteRcv();
+ 275   2                      if(FP_Rcv_timeOut_FLG){ //³¬Ê±´¦Àí
+ 276   3                              
+ 277   3                              delayMs(100);
+ 278   3                              
+ 279   3                              FP_Rcv_timeOut_FLG  = 0;
+ 280   3                              memset(&FINGERPRINT_RECEVICE_BUFFER[0], 0xff, ucLength * sizeof(u8));
+ 281   3                              umNew_AddStep   = umStepAdd_A;
+ 282   3                              um_dttStep              = umStepDtt_Cfail;      //ÏìÓ¦Êý¾Ý½ÓÊÕ³¬Ê±£¬Ç¿ÖÆÊ¹Ê§°Ü
+ 283   3                              
+ 284   3                              delayMs(100);
+ 285   3                              
+ 286   3                              return;
+ 287   3                      }
+ 288   2              }
+ 289   1      }
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 6   
+
+ 290          
+ 291          //½«BUFFER1ÖÐµÄÌØÕ÷Âë´æ·Åµ½Ö¸¶¨µÄÎ»ÖÃ  ´¢´æÄ£°å£º½«ÌØÕ÷ÎÄ¼þ´æ·Åµ½flashÖ¸ÎÆ¿â¡ª¡ª¡ª¡ª9
+ 292          void FINGERPRINT_Cmd_Save_Finger( unsigned char ucH_Char,unsigned char ucL_Char )
+ 293          {
+ 294   1                 unsigned long temp = 0;
+ 295   1                         unsigned char i;
+ 296   1      
+ 297   1      //           SAVE_FINGER[9]={0x01,0x00,0x06,0x06,0x01,0x00,0x0B,0x00,0x19};//½«BUFFER1ÖÐµÄÌØÕ÷Âë´æ·Åµ½Ö¸¶¨
+             -µÄÎ»ÖÃ
+ 298   1      
+ 299   1                 FP_Save_Finger[5] = ucH_Char;
+ 300   1                 FP_Save_Finger[6] = ucL_Char;
+ 301   1                 
+ 302   1                         for(i=0;i<7;i++)   //¼ÆËãÐ£ÑéºÍ
+ 303   1                                 temp = temp + FP_Save_Finger[i];
+ 304   1                                  
+ 305   1                         FP_Save_Finger[7]=(temp & 0x00FF00) >> 8; //´æ·ÅÐ£ÑéÊý¾Ý
+ 306   1                         FP_Save_Finger[8]= temp & 0x0000FF;
+ 307   1                         
+ 308   1                 for(i=0;i<6;i++)    
+ 309   1                     uartObjFP_Send_Byte(FP_Pack_Head[i]);        //·¢ËÍ°üÍ·
+ 310   1      
+ 311   1                 for(i=0;i<9;i++)  
+ 312   1                         uartObjFP_Send_Byte(FP_Save_Finger[i]);      //·¢ËÍÃüÁî ½«Í¼Ïñ×ª»»³É ÌØÕ÷Âë ´æ·ÅÔÚ CHAR_buffer1
+ 313   1      }
+ 314          
+ 315          void FP_Cmd_Save_Finger(unsigned char n )         //cyacyfÐÞ¸Ä£º¸ÄÎª1¸ö²ÎÊý¡ª¡ª¡ª¡ª9
+ 316          {
+ 317   1                 unsigned long temp = 0;
+ 318   1                         unsigned char i;
+ 319   1      
+ 320   1      //           SAVE_FINGER[9]={0x01,0x00,0x06,0x06,0x01,0x00,0x0B,0x00,0x19};//½«BUFFER1ÖÐµÄÌØÕ÷Âë´æ·Åµ½Ö¸¶¨
+             -µÄÎ»ÖÃ
+ 321   1      
+ 322   1                // FP_Save_Finger[5] = ucH_Char;
+ 323   1                 FP_Save_Finger[6] = n;
+ 324   1                 
+ 325   1                         for(i=0;i<7;i++)   //¼ÆËãÐ£ÑéºÍ
+ 326   1                                 temp = temp + FP_Save_Finger[i];
+ 327   1                                  
+ 328   1                         FP_Save_Finger[7]=(temp & 0x00FF00) >> 8; //´æ·ÅÐ£ÑéÊý¾Ý
+ 329   1                         FP_Save_Finger[8]= temp & 0x0000FF;
+ 330   1                         
+ 331   1                 for(i=0;i<6;i++)    
+ 332   1                     uartObjFP_Send_Byte(FP_Pack_Head[i]);        //·¢ËÍ°üÍ·
+ 333   1      
+ 334   1                 for(i=0;i<9;i++)  
+ 335   1                         uartObjFP_Send_Byte(FP_Save_Finger[i]);      //·¢ËÍÃüÁî ½«Í¼Ïñ×ª»»³É ÌØÕ÷Âë ´æ·ÅÔÚ CHAR_buffer1
+ 336   1      }
+ 337          
+ 338          //½«flashÊý¾Ý¿âÖÐÖ¸¶¨IDºÅµÄÖ¸ÎÆÄ£°å¶ÁÈëµ½Ä£°å»º³åÇøBUFFER1
+ 339          void FINGERPRINT_Cmd_Load_Model( unsigned char ucH_Char,unsigned char ucL_Char )
+ 340          {
+ 341   1                 unsigned long temp = 0;
+ 342   1                         unsigned char i;
+ 343   1      
+ 344   1      //         FP_Load_Model[9]={0x01,0x00,0x06,0x07,0x01,0x00,0x0B,0x00,0x1A};//½«flashÊý¾Ý¿âÖÐÖ¸¶¨IDºÅµÄÖ¸ÎÆ
+             -Ä£°å¶ÁÈëµ½Ä£°å»º³åÇøBUFFER1
+ 345   1      
+ 346   1                 FP_Load_Model[5] = ucH_Char;
+ 347   1                 FP_Load_Model[6] = ucL_Char;
+ 348   1                 
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 7   
+
+ 349   1                         for(i=0;i<7;i++)   //¼ÆËãÐ£ÑéºÍ
+ 350   1                                 temp = temp + FP_Load_Model[i];
+ 351   1                                  
+ 352   1                         FP_Load_Model[7]=(temp & 0x00FF00) >> 8; //´æ·ÅÐ£ÑéÊý¾Ý
+ 353   1                         FP_Load_Model[8]= temp & 0x0000FF;
+ 354   1                         
+ 355   1                 for(i=0;i<6;i++)    
+ 356   1                     uartObjFP_Send_Byte(FP_Pack_Head[i]);        //·¢ËÍ°üÍ·
+ 357   1      
+ 358   1                 for(i=0;i<9;i++)  
+ 359   1                         uartObjFP_Send_Byte(FP_Load_Model[i]);      //·¢ËÍÃüÁî ½«Ö¸¶¨IDºÅµÄÖ¸ÎÆÄ£°å¶ÁÈëµ½Ä£°å»º³åÇøBUFF
+             -ER1
+ 360   1      }
+ 361          
+ 362          unsigned char FP_Cmd_Load_Model( unsigned char ucH_Char,unsigned char ucL_Char)
+ 363          {
+ 364   1               FINGERPRINT_Cmd_Load_Model(ucH_Char,ucL_Char );
+ 365   1               FINGERPRINT_Recevice_Data(12); //½ÓÊÕ12¸ö³¤¶ÈµÄ·´À¡Âë
+ 366   1               if(FINGERPRINT_RECEVICE_BUFFER[9]==0x0)//Ä£°å¶Á³ö³É¹¦
+ 367   1               return 0x01;
+ 368   1               else if(FINGERPRINT_RECEVICE_BUFFER[9]==0x0C)  //Ä£°å¶Á³öÓÐ´í»òÄ£°åÎÞÐ§
+ 369   1               return 0x02;
+ 370   1               else 
+ 371   1               return 0;
+ 372   1      }
+ 373          
+ 374          void FP_imageCollection(u8 rp_time){
+ 375   1      
+ 376   1              const   u8 cmdRepeat_time       = rp_time;
+ 377   1                              u8 cmdRepeat_cnt        = 0;
+ 378   1              
+ 379   1              do{
+ 380   2              
+ 381   2                      FINGERPRINT_Cmd_Get_Img();
+ 382   2                      FINGERPRINT_Recevice_Data(12);
+ 383   2                      cmdRepeat_cnt ++;
+ 384   2              }while((FINGERPRINT_RECEVICE_BUFFER[9] != 0) &&
+ 385   1                         (cmdRepeat_cnt < cmdRepeat_time));
+ 386   1      }
+ 387          
+ 388          /*Ö¸ÎÆÑ§Ï°*///Ö¸ÎÆÌí¼ÓÐÂÓÃ»§
+ 389          void FP_userModelNew_Add(unsigned char ucH_user,unsigned char ucL_user){
+ 390   1              
+ 391   1              static  u8 *Pointer;
+ 392   1                      
+ 393   1              const   u8 cmdRepeat_time       = 3;
+ 394   1                              u8 cmdRepeat_cnt        = 0;
+ 395   1              
+ 396   1              Pointer = &FINGERPRINT_RECEVICE_BUFFER[0];
+ 397   1              
+ 398   1              switch(umNew_AddStep){
+ 399   2              
+ 400   2                      case umStepAdd_A:{
+ 401   3                      
+ 402   3                              FP_imageCollection(2);
+ 403   3      //                      uartObjFP_Send_String(Pointer, 12);
+ 404   3                              
+ 405   3                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 406   4                              
+ 407   4                                      Mode_umAdd_timeOutcnt = umAddMode_TIMEOUT;  //³¬Ê±¼ì²âÖµ¸üÐÂ
+ 408   4                                      
+ 409   4                                      FINGERPRINT_Cmd_Img_To_Buffer1();       //½«Í¼Ïñ×ª»»³ÉÌØÕ÷Âë´æ·ÅÔÚBuffer1ÖÐ
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 8   
+
+ 410   4                                      FINGERPRINT_Recevice_Data(12);          //½ÓÊÕ12¸ö³¤¶ÈµÄ·´À¡Âë
+ 411   4      //                              uartObjFP_Send_String(Pointer, 12);
+ 412   4                                      
+ 413   4                                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 414   5                                      
+ 415   5                                              umNew_AddStep_StandBy = umStepAdd_B;
+ 416   5                                      }
+ 417   4                              }
+ 418   3                              
+ 419   3                              if(umStepAdd_B == umNew_AddStep_StandBy){
+ 420   4                                      
+ 421   4                                      FP_imageCollection(1);
+ 422   4      //                              uartObjFP_Send_String(Pointer, 12);
+ 423   4                                      
+ 424   4                                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0x02){
+ 425   5                                      
+ 426   5                                              umNew_AddStep = umStepAdd_B;
+ 427   5                                              
+ 428   5                                              Mode_umAdd_timeOutcnt = umAddMode_TIMEOUT;  //³¬Ê±¼ì²âÖµ¸üÐÂ
+ 429   5                                      }
+ 430   4                              }
+ 431   3                      }break;
+ 432   2                      
+ 433   2                      case umStepAdd_B:{
+ 434   3                      
+ 435   3                              FP_imageCollection(3);
+ 436   3      //                      uartObjFP_Send_String(Pointer, 12);
+ 437   3                              
+ 438   3                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 439   4                              
+ 440   4                                      FINGERPRINT_Cmd_Img_To_Buffer2();       //½«Í¼Ïñ×ª»»³ÉÌØÕ÷Âë´æ·ÅÔÚBuffer2ÖÐ
+ 441   4                                      FINGERPRINT_Recevice_Data(12);          //½ÓÊÕ12¸ö³¤¶ÈµÄ·´À¡Âë
+ 442   4      //                              uartObjFP_Send_String(Pointer, 12);
+ 443   4                                      
+ 444   4                                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 445   5                                              
+ 446   5      //                                      Mode_umAdd_timeOutcnt = umAddMode_TIMEOUT;  //³¬Ê±¼ì²âÖµ¸üÐÂ
+ 447   5                                      
+ 448   5                                              FINGERPRINT_Cmd_Reg_Model();
+ 449   5                                              FINGERPRINT_Recevice_Data(12); 
+ 450   5      //                                      uartObjFP_Send_String(Pointer, 12);
+ 451   5                                              
+ 452   5                                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 453   6                                              
+ 454   6                                                      umNew_AddStep_StandBy = umStepAdd_C;
+ 455   6                                              }
+ 456   5                                      }
+ 457   4                              }
+ 458   3                              
+ 459   3                              if(umStepAdd_C == umNew_AddStep_StandBy){
+ 460   4                              
+ 461   4                                      FP_imageCollection(1);
+ 462   4      //                              uartObjFP_Send_String(Pointer, 12);
+ 463   4                                      
+ 464   4                                      beeps(11);      //×¼Íê³É£¬ÌáÊ¾Òô
+ 465   4                                      
+ 466   4                                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0x02){
+ 467   5                                      
+ 468   5                                              umNew_AddStep = umStepAdd_C;
+ 469   5                                      }
+ 470   4                              }
+ 471   3                      }break;
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 9   
+
+ 472   2                      
+ 473   2                      case umStepAdd_C:{                                      //·½°¸Ò»
+ 474   3                      
+ 475   3                              FINGERPRINT_Cmd_Save_Finger(ucH_user,ucL_user);
+ 476   3                              
+ 477   3                              FINGERPRINT_Recevice_Data(12);
+ 478   3      //                      uartObjFP_Send_String(Pointer, 12);
+ 479   3                              
+ 480   3                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 481   4                              
+ 482   4                                      umNew_AddStep_StandBy = umStepAdd_D;
+ 483   4                              }
+ 484   3                              
+ 485   3                              if(umStepAdd_D == umNew_AddStep_StandBy){
+ 486   4                              
+ 487   4                                      FP_imageCollection(1);
+ 488   4      //                              uartObjFP_Send_String(Pointer, 12);
+ 489   4                                      
+ 490   4                                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0x02){
+ 491   5                                      
+ 492   5                                              umNew_AddStep             = umStepAdd_D;
+ 493   5                                              umNew_AddStep_StandBy = umStepAdd_Cmp;
+ 494   5                                      }
+ 495   4                              }
+ 496   3                      }break;
+ 497   2                      
+ 498   2      //              case umStepAdd_D:{                                      //·½°¸¶þ
+ 499   2      //              
+ 500   2      //                      FP_imageCollection(2);
+ 501   2      //                      uartObjFP_Send_String(Pointer, 12);
+ 502   2      //                      
+ 503   2      //                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 504   2      //                              
+ 505   2      //                              FINGERPRINT_Cmd_Delete_Model((u16)ucL_user);    //flag=4Ê±¼ì²âµ½ÓÐÖ¸ÎÆ°´ÏÂÔòÖØÐÂÂ¼Èë
+ 506   2      //                              FINGERPRINT_Recevice_Data(12);                                  //½ÓÊÕ12¸ö³¤¶ÈµÄ·´À¡Âë
+ 507   2      //                              
+ 508   2      //                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 509   2      //                              
+ 510   2      //                                      umNew_AddStep_StandBy = umStepAdd_D;
+ 511   2      //                              }
+ 512   2      //                      }
+ 513   2      //                      
+ 514   2      //                      if(umStepAdd_D == umNew_AddStep_StandBy){
+ 515   2      //                      
+ 516   2      //                              FP_imageCollection(1);
+ 517   2      //                              uartObjFP_Send_String(Pointer, 12);
+ 518   2      //                              
+ 519   2      //                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0x02){
+ 520   2      //                              
+ 521   2      //                                      umNew_AddStep = umStepAdd_Fault;
+ 522   2      //                              }
+ 523   2      //                      }
+ 524   2      //              }break;
+ 525   2                      
+ 526   2                      default:break;
+ 527   2              }
+ 528   1              
+ 529   1              return;
+ 530   1      }
+ 531          
+ 532          //Ö¸ÎÆ¼ì²â³ÌÐò
+ 533          u8 FP_Detecting(void){  
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 10  
+
+ 534   1              
+ 535   1      //      static  u8      *Pointer;       //»Ø·¢»º´æ
+ 536   1              
+ 537   1              static  u8      FP_ID = 0;
+ 538   1              
+ 539   1              u8 xdata        log_info[60]    = {0};
+ 540   1              
+ 541   1      //      Pointer = &FINGERPRINT_RECEVICE_BUFFER[0];
+ 542   1              
+ 543   1              if(FPvalidation_flg)return FPID_NULL;   //ÒÑÊ¶±ðÍê³É±êÖ¾Î´ÖÃÁã£¬²»Óè¼ì²â
+ 544   1                              
+ 545   1              if(umStepDtt_A == um_dttStep){
+ 546   2                      
+ 547   2                      FP_imageCollection(1);
+ 548   2      //              uartObjFP_Send_String(Pointer,12);
+ 549   2                      
+ 550   2                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 551   3                      
+ 552   3                              um_dttStep = umStepDtt_B;
+ 553   3                              
+ 554   3                              FINGERPRINT_Cmd_Img_To_Buffer1(); //½«Í¼Ïñ×ª»»³ÉÌØÕ÷Âë´æ·ÅÔÚBuffer1ÖÐ
+ 555   3                              FINGERPRINT_Recevice_Data(12);   //½ÓÊÕ12¸ö³¤¶ÈµÄ·´À¡Âë
+ 556   3      //                      uartObjFP_Send_String(Pointer, 12);     
+ 557   3                              
+ 558   3                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 559   4                              
+ 560   4                                      FINGERPRINT_Cmd_Search_Finger_0_100();
+ 561   4                                      FINGERPRINT_Recevice_Data(16);
+ 562   4      //                              uartObjFP_Send_String(Pointer, 16);
+ 563   4                                      
+ 564   4                                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 565   5                                      
+ 566   5                                              um_dttStep = umStepDtt_Csuccess;
+ 567   5                                              
+ 568   5                                              FP_ID = FINGERPRINT_RECEVICE_BUFFER[11];
+ 569   5                                              
+ 570   5                                              /*ÌáÊ¾Òô·ÅÖÃ*///Ò»´ÎÐÔ
+ 571   5                                              beeps(0);       //ÌáÊ¾Òô
+ 572   5                                              
+ 573   5                                      }else{
+ 574   5                                      
+ 575   5                                              um_dttStep = umStepDtt_Cfail;
+ 576   5                                              
+ 577   5                                              /*ÌáÊ¾Òô·ÅÖÃ*///Ò»´ÎÐÔ
+ 578   5                                      }
+ 579   4                              }else{
+ 580   4                              
+ 581   4                                      um_dttStep = umStepDtt_A;       //×´Ì¬»Ö¸´
+ 582   4                              }
+ 583   3                      }
+ 584   2              }
+ 585   1              
+ 586   1              if(umStepDtt_Cfail == um_dttStep){
+ 587   2              
+ 588   2                      FP_imageCollection(1);
+ 589   2      //              uartObjFP_Send_String(Pointer,12);
+ 590   2                      
+ 591   2                      /*ÌáÊ¾Òô·ÅÖÃ*///Ñ­»·
+ 592   2                      beepTips_s(4, 8, 8);    //ÌáÊ¾Òô
+ 593   2                      
+ 594   2                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0x02){
+ 595   3                      
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 11  
+
+ 596   3                              um_dttStep = umStepDtt_A;
+ 597   3                              FPvalidation_flg = 0;
+ 598   3                              
+ 599   3                              sprintf(log_info, "¼ì²âµ½·Ç·¨Ö¸ÎÆ´¥Ãþ£¡£¡£¡\n");
+ 600   3                              LogDats(log_info, strlen(log_info));
+ 601   3                      }
+ 602   2              }
+ 603   1                              
+ 604   1              if(umStepDtt_Csuccess == um_dttStep){
+ 605   2                      
+ 606   2                      /*¸ù¾ÝÐèÒª×Ô¶¨ÒåÐÞ¸ÄÂß¼­£¬Ê±ÒªÊÖÖ¸Àë¿ªÊ±ÏìÓ¦»¹ÊÇÁ¢¼´ÏìÓ¦£¬Á¢¼´ÏìÓ¦ÔòÐèÒªÊÖÖ¸ÊÍ·ÅÅÐ¶ÏÂß¼­*/
+ 607   2                      
+ 608   2                      static bit fp_releas_FLAG = 1;  //ÊÖÖ¸ÊÍ·Å±êÖ¾
+ 609   2              
+ 610   2                      FP_imageCollection(1);
+ 611   2      //              uartObjFP_Send_String(Pointer,12);
+ 612   2                      
+ 613   2                      if(fp_releas_FLAG){
+ 614   3                              
+ 615   3                              fp_releas_FLAG   = 0;
+ 616   3                              FPvalidation_flg = 1;
+ 617   3                      }
+ 618   2                      
+ 619   2                      /*ÌáÊ¾Òô·ÅÖÃ*///Ñ­»·
+ 620   2                      
+ 621   2                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0x02){
+ 622   3                              
+ 623   3                              um_dttStep               = umStepDtt_A;
+ 624   3                              
+ 625   3                              fp_releas_FLAG   = 1;
+ 626   3      //                      FPvalidation_flg = 1;
+ 627   3                              
+ 628   3                              sprintf(log_info, "¼ì²âµ½ºÏ·¨Ö¸ÎÆ´¥Ãþ£¬¶ÔÓ¦Ö¸ÎÆIDÎª£º %d.\n", (int)FP_ID);
+ 629   3                              LogDats(log_info, strlen(log_info));
+ 630   3                              
+ 631   3                              return FP_ID;
+ 632   3                      }
+ 633   2              }
+ 634   1              
+ 635   1              return FPID_NULL;
+ 636   1      }
+ 637          
+ 638          //Ö¸ÎÆÄ£¿éÔÚÖ÷¶¯¼ì²âÄ£Ê½ÏÂ£¬¹¦ÄÜ±»½ûÖ¹Ê±Ëù´¥·¢µÄ³ÌÐò
+ 639          void FP_Detecting_Disable(void){
+ 640   1      
+ 641   1              FP_imageCollection(1);
+ 642   1              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 643   2              
+ 644   2                      um_dttStep = umStepDtt_B;
+ 645   2                      beeps(12);      //ÌáÊ¾Òô
+ 646   2                      
+ 647   2              }else{
+ 648   2              
+ 649   2                      um_dttStep = umStepDtt_A;
+ 650   2              }
+ 651   1      }
+ 652          
+ 653          /*********************Ö¸ÎÆÄ£¿éÇý¶¯Ö÷Ïß³Ì***********************/
+ 654          void thread_moudleFP(void){
+ 655   1              
+ 656   1              u8 data repeatTX_buff[45]               = {0};
+ 657   1              u8 data fpID_Tab[13]                    = {0};
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 12  
+
+ 658   1              
+ 659   1      //      u8 code rptTX_Continue_Delay    = 30;   //Á¬°ü·¢ËÍÊý¾Ý¼ä¸ô_30ms²»ÄÜÔÙ¶ÌÁË
+ 660   1              
+ 661   1              switch(process_FPworkMode){
+ 662   2              
+ 663   2                      case work_Mode_umAdd:{
+ 664   3                              
+ 665   3                              u8 code detect_Period = 100; //·Ç×èÈûÖ÷¶¯¼à²âÖÜÆÚ
+ 666   3                              static u8 detect_tCount = 0;
+ 667   3                              
+ 668   3                              delayMs(2);//±ØÐèÑÓÊ±
+ 669   3                              if(detect_tCount < detect_Period)detect_tCount ++; //·Ç×èÈûÖÜÆÚ¼ì²â
+ 670   3                              else{
+ 671   4                              
+ 672   4                                      FP_userModelNew_Add(0, FP_ID);
+ 673   4                                      
+ 674   4                                      if(umNew_AddStep_StandBy == umStepAdd_B){       //µ¥´ÎÂ¼Èë°ëÍê³É
+ 675   5                                      
+ 676   5                                              if(umNew_AddStepReapt_cmpHalfEN){
+ 677   6                                              
+ 678   6                                                      umNew_AddStepReapt_cmpHalfEN = 0;       //Ê¹ÄÜ¹Ø±Õ£¬Ö»·¢Ò»´Î
+ 679   6                                                      
+ 680   6                                                      beeps(5);       //ÌáÊ¾Òô
+ 681   6                                                      
+ 682   6                                                      //Êý¾ÝÏìÓ¦¼°»Ø¸´
+ 683   6                                                      repeatTX_buff[15]       = FP_ID;
+ 684   6                                                      repeatTX_buff[12]       = 0x0A;         //Êý¾Ý1Ìî³ä°ëÍê³É×´Ì¬ 
+ 685   6                                                      
+ 686   6                                                      dtasTX_loadBasic_AUTO( repeatTX_buff,                           /*·¢ËÍÇ°×îºó×°ÔØ*///·¢ËÍ°ü»ù±¾ÐÅÏ¢Ìî³ä
+ 687   6                                                                                                 FRAME_TYPE_StoM_RCVsuccess,
+ 688   6                                                                                                 FRAME_MtoSCMD_cmdFPLearn,            
+ 689   6                                                                                                 0
+ 690   6                                                                                               );
+ 691   6                                                      uartObjWIFI_Send_String(repeatTX_buff, repeatTX_Len);   //°ëÍê³É£¬ÏòÉÏÎ»»úÏìÓ¦×´Ì¬
+ 692   6                                              }
+ 693   5                                      }
+ 694   4                                      
+ 695   4                                      if(umNew_AddStep == umStepAdd_D){       //µ¥´ÎÂ¼ÈëÈ«Íê³É
+ 696   5                                              
+ 697   5                                              u8 fpStore_addr         = EEPROM_ADDR_FP_STORE + 12 - FP_ID / 8;
+ 698   5                                              u8 val_Store            = 0;
+ 699   5                                              
+ 700   5                                              EEPROM_read_n(fpStore_addr, &val_Store, 1);             //Ä£°åÕ¼Î»´æ´¢¸üÐÂ
+ 701   5                                              val_Store |= 1 << (FP_ID % 8);  
+ 702   5                                              coverEEPROM_write_n(fpStore_addr, &val_Store, 1);
+ 703   5                                              
+ 704   5                                              FP_modeCompleteTips = cmp_umAdd_Success;                //Íê³É×´¿ö Tips¸üÐÂ
+ 705   5                                              FPmodeCmpTips_cnt       = FPmodeCmpTips_Period;
+ 706   5                                              
+ 707   5                                              //Êý¾ÝÏìÓ¦¼°»Ø¸´
+ 708   5                                              repeatTX_buff[15]       = FP_ID;
+ 709   5                                              repeatTX_buff[12]       = 0x0B;
+ 710   5                                              EEPROM_read_n(EEPROM_ADDR_FP_STORE, &fpID_Tab[0], 13);  
+ 711   5                                              memcpy(&repeatTX_buff[16], &fpID_Tab[0], 13);
+ 712   5                                              
+ 713   5                                              dtasTX_loadBasic_AUTO( repeatTX_buff,                           /*·¢ËÍÇ°×îºó×°ÔØ*///·¢ËÍ°ü»ù±¾ÐÅÏ¢Ìî³ä
+ 714   5                                                                                         FRAME_TYPE_StoM_RCVsuccess,
+ 715   5                                                                                         FRAME_StoMRPY_rpyLearnSuccess,       //Ñ§Ï°³É¹¦
+ 716   5                                                                                         0    
+ 717   5                                                                                       );
+ 718   5                                              uartObjWIFI_Send_String(repeatTX_buff, repeatTX_Len);   //È«Íê³É£¬ÏòÉÏÎ»»úÏìÓ¦×´Ì¬
+ 719   5                                              
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 13  
+
+ 720   5                                              FP_ID                           = FPID_NULL;
+ 721   5                                              process_FPworkMode      = work_Mode_NULL;
+ 722   5                                              umNew_AddStep           = umStepAdd_A;
+ 723   5      
+ 724   5                                              LogString("Ä£°åÑ§Ï°³É¹¦ !!!\n");
+ 725   5                                      }
+ 726   4                                      
+ 727   4                                      if(!Mode_umAdd_timeOutcnt){     //³¬Ê±ÍË³ö
+ 728   5                                      
+ 729   5                                              led_darkAll();
+ 730   5                                              
+ 731   5                                              beepTips_s(5, 20, 8);   //ÌáÊ¾Òô
+ 732   5                                              
+ 733   5                                              FP_modeCompleteTips = cmp_umAdd_tOut;           //Íê³É×´¿ö Tips¸üÐÂ
+ 734   5                                              FPmodeCmpTips_cnt       = FPmodeCmpTips_Period;
+ 735   5                                              
+ 736   5                                              //Êý¾ÝÏìÓ¦¼°»Ø¸´
+ 737   5                                              repeatTX_buff[15]       = FP_ID;
+ 738   5                                              repeatTX_buff[12]       = 0x0F;
+ 739   5                                              
+ 740   5                                              dtasTX_loadBasic_AUTO( repeatTX_buff,                   /*·¢ËÍÇ°×îºó×°ÔØ*///·¢ËÍ°ü»ù±¾ÐÅÏ¢Ìî³ä
+ 741   5                                                                                         FRAME_TYPE_StoM_RCVsuccess,
+ 742   5                                                                                         FRAME_StoMRPY_rpyLearnFail,  //Ñ§Ï°Ê§°Ü
+ 743   5                                                                                         0
+ 744   5                                                                                       );
+ 745   5                                              uartObjWIFI_Send_String(repeatTX_buff, repeatTX_Len);   //Î´Íê³É£¬ÏòÉÏÎ»»úÏìÓ¦×´Ì¬
+ 746   5                                              
+ 747   5                                              FP_ID                           = FPID_NULL;
+ 748   5                                              process_FPworkMode      = work_Mode_NULL;
+ 749   5                                              umNew_AddStep           = umStepAdd_A;
+ 750   5                                              
+ 751   5                                              LogString("Ä£°åÑ§Ï°Ê§°Ü£¬³¬Ê±ÍË³ö !!!\n");
+ 752   5                                      }
+ 753   4                              }
+ 754   3                              
+ 755   3                      }break;
+ 756   2                      
+ 757   2                      case work_Mode_umDel:{
+ 758   3                      
+ 759   3                              FP_Cmd_Delete_Model(FP_ID);
+ 760   3                              FINGERPRINT_Recevice_Data(12);                                  //½ÓÊÕ12¸ö³¤¶ÈµÄ·´À¡Âë
+ 761   3                              
+ 762   3                              if(FINGERPRINT_RECEVICE_BUFFER[9] == 0){
+ 763   4                              
+ 764   4                                      u8 fpStore_addr         = EEPROM_ADDR_FP_STORE + 12 - FP_ID / 8;
+ 765   4                                      u8 val_Store            = 0;
+ 766   4                                      
+ 767   4                                      EEPROM_read_n(fpStore_addr, &val_Store, 1);             //Ä£°åÕ¼Î»É¾³ý
+ 768   4                                      val_Store &= ~(1 << (FP_ID % 8));       
+ 769   4                                      coverEEPROM_write_n(fpStore_addr, &val_Store, 1);
+ 770   4                                      
+ 771   4                                      //Êý¾ÝÏìÓ¦¼°»Ø¸´
+ 772   4                                      repeatTX_buff[15]       = FP_ID;
+ 773   4                                      repeatTX_buff[12]       = 0x0A;         //Êý¾Ý1Ìî³äÉ¾³ýÍê³É
+ 774   4                                      
+ 775   4                                      dtasTX_loadBasic_AUTO( repeatTX_buff,                           /*·¢ËÍÇ°×îºó×°ÔØ*///·¢ËÍ°ü»ù±¾ÐÅÏ¢Ìî³ä
+ 776   4                                                                                 FRAME_TYPE_StoM_RCVsuccess,
+ 777   4                                                                                 FRAME_MtoSCMD_cmdFPDelete,   //É¾³ý³É¹¦
+ 778   4                                                                                 0
+ 779   4                                                                               );
+ 780   4                                      uartObjWIFI_Send_String(repeatTX_buff, repeatTX_Len);   //°ëÍê³É£¬ÏòÉÏÎ»»úÏìÓ¦×´Ì¬
+ 781   4      //                              delayMs(rptTX_Continue_Delay);
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 14  
+
+ 782   4      //                              uartObjWIFI_Send_String(repeatTX_buff, repeatTX_Len);   //¶à·¢Ò»´Î£¬È·±£¶Ô·½½ÓÊÕ
+ 783   4                                      
+ 784   4                                      FP_ID = FPID_NULL;
+ 785   4                                      process_FPworkMode      = work_Mode_NULL;
+ 786   4                                      fpModeTrig_umDetect();  //Ö¸ÎÆÄ£¿éÏß³ÌÌø»ØÖ÷¶¯¼ì²âÄ£Ê½
+ 787   4      
+ 788   4                                      LogString("Ä£°åÉ¾³ý³É¹¦ !!!\n");                                
+ 789   4                              }
+ 790   3                      }break;
+ 791   2                              
+ 792   2                      case work_Mode_umDetect:{
+ 793   3                              
+ 794   3                              u8 code detect_Period = 50; //·Ç×èÈûÖ÷¶¯¼à²âÖÜÆÚ
+ 795   3                              static u8 detect_tCount = 0;
+ 796   3                              
+ 797   3                              delayMs(2);//±ØÐèÑÓÊ±
+ 798   3                              if(detect_tCount < detect_Period)detect_tCount ++; //·Ç×èÈûÖÜÆÚ¼ì²â
+ 799   3                              else{
+ 800   4                              
+ 801   4                                      detect_tCount = 0;
+ 802   4                                      
+ 803   4                                      if(FP_umDetect_enFLAG){ //ÊÇ·ñ¿ªÆôÖ÷¶¯¼ì²âÊ¹ÄÜ
+ 804   5                                              
+ 805   5                                              u8 detect_Result = FP_Detecting();      //¼ÌµçÆ÷ÏìÓ¦ÒÑÔÚ¼ÌµçÆ÷Çý¶¯ÎÄ¼þ´¦×öÁËñîºÏ´¦Àí 
+ 806   5                                              
+ 807   5                                              if(detect_Result != FPID_NULL){         
+ 808   6                                                      
+ 809   6                                                      //Êý¾ÝÏìÓ¦¼°»Ø¸´
+ 810   6                                                      repeatTX_buff[15] = detect_Result;      //Ö¸ÎÆºÅÌî³ä
+ 811   6                                                      (status_Relay)?(repeatTX_buff[11] = 0x00):(repeatTX_buff[11] = 0x01);//¿ª¹Ø×´Ì¬Ìî³ä£¨·´×ªÔ¤²â£©
+ 812   6                                                      (process_RelayWorkMode == work_Mode_flip)?(repeatTX_buff[14] = 0x01):(repeatTX_buff[14] = 0x02);//¿ª
+             -¹Ø¹¤×÷Ä£Ê½Ìî³ä ·­×ªÄ£Ê½£º0x01 ÑÓÊ±Ä£Ê½£º0x02
+ 813   6                                                      dtasTX_loadBasic_CUST( DATATRANS_objFLAG_MOBILE,        /*·¢ËÍÇ°×îºó×°ÔØ*///·¢ËÍ°ü»ù±¾ÐÅÏ¢Ìî³ä
+ 814   6                                                                                                 repeatTX_buff,                       
+ 815   6                                                                                                 FRAME_TYPE_StoM_RCVsuccess,
+ 816   6                                                                                                 FRAME_MtoSCMD_cmdControl,
+ 817   6                                                                                                 0
+ 818   6                                                                                               );
+ 819   6                                                      uartObjWIFI_Send_String(repeatTX_buff, dataTransLength_objMOBILE);      //ÊÖ¶¯¿ØÖÆ¿ª¹Ø£¬Ö÷¶¯ÉÏ´«£¬²»ÄÜÁ¬·
+             -¢£¬·ñÔò¼ÇÂ¼¶à´Î       --Ç¿ÖÆ33×Ö½Ú
+ 820   6                                              }
+ 821   5                                              
+ 822   5                                      }else{
+ 823   5                                      
+ 824   5                                              FP_Detecting_Disable(); //Ö÷¶¯¼ì²â½ûÓÃÊ±£¬¿Õ²â
+ 825   5                                      }       
+ 826   4                              }
+ 827   3                              
+ 828   3                      }break;
+ 829   2                      
+ 830   2                      default:{
+ 831   3                      
+ 832   3                              process_FPworkMode = work_Mode_NULL;
+ 833   3                              
+ 834   3                      }break;
+ 835   2              }
+ 836   1              
+ 837   1              if(FP_modeCompleteTips != cmp_NULL){    //Tips´¦Àí
+ 838   2              
+ 839   2                      switch(FP_modeCompleteTips){
+ 840   3                      
+ 841   3                              case cmp_umAdd_Success:{        //Ñ§Ï°³É¹¦Tips
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 15  
+
+ 842   4                              
+ 843   4                                      if(!FPmodeCmpTips_cnt){
+ 844   5                                      
+ 845   5                                              FP_modeCompleteTips = cmp_NULL;
+ 846   5                                              led_darkAll();
+ 847   5                                              fpModeTrig_umDetect();  //Ö¸ÎÆÄ£¿éÏß³ÌÌø»ØÖ÷¶¯¼ì²âÄ£Ê½
+ 848   5                                              
+ 849   5                                      }else{
+ 850   5                                      
+ 851   5                                              if((FPmodeCmpTips_cnt / 150) ==10)led_darkAll();
+ 852   5                                              if((FPmodeCmpTips_cnt / 150) == 9)led_Act(red,  led_on);
+ 853   5                                              if((FPmodeCmpTips_cnt / 150) == 8)led_Act(green,led_on);
+ 854   5                                              if((FPmodeCmpTips_cnt / 150) == 7)led_Act(blue, led_on);
+ 855   5                                              if((FPmodeCmpTips_cnt / 150) == 6)led_Act(red,  led_on);
+ 856   5                                              if((FPmodeCmpTips_cnt / 150) == 5)led_Act(green,led_on);
+ 857   5                                              if((FPmodeCmpTips_cnt / 150) == 4)led_Act(blue, led_on);
+ 858   5                                              if((FPmodeCmpTips_cnt / 150) == 3)led_Act(red,  led_on);
+ 859   5                                              if((FPmodeCmpTips_cnt / 150) == 2)led_Act(green,led_on);
+ 860   5                                              if((FPmodeCmpTips_cnt / 150) == 1)led_Act(blue, led_on);
+ 861   5                                      }
+ 862   4                              }break;
+ 863   3                              
+ 864   3                              case cmp_umAdd_tOut:{   //Ñ§Ï°Ê§°Ü£¬³¬Ê±ÍË³öTips
+ 865   4                              
+ 866   4                                      if(!FPmodeCmpTips_cnt){
+ 867   5                                      
+ 868   5                                              FP_modeCompleteTips = cmp_NULL;
+ 869   5                                              led_darkAll();
+ 870   5                                              fpModeTrig_umDetect();  //Ö¸ÎÆÄ£¿éÏß³ÌÌø»ØÖ÷¶¯¼ì²âÄ£Ê½
+ 871   5                                              
+ 872   5                                      }else{
+ 873   5                                      
+ 874   5                                              if((FPmodeCmpTips_cnt / 200) == 7)led_darkAll();
+ 875   5                                              if((FPmodeCmpTips_cnt / 200) == 6)led_Act(red,  led_on);
+ 876   5                                              if((FPmodeCmpTips_cnt / 200) == 5)led_darkAll();
+ 877   5                                              if((FPmodeCmpTips_cnt / 200) == 4)led_Act(red,  led_on);
+ 878   5                                              if((FPmodeCmpTips_cnt / 200) == 3)led_darkAll();
+ 879   5                                              if((FPmodeCmpTips_cnt / 200) == 2)led_Act(red,  led_on);
+ 880   5                                              if((FPmodeCmpTips_cnt / 200) == 1)led_darkAll();
+ 881   5                                      }
+ 882   4                              }break;
+ 883   3                              
+ 884   3                              default:{
+ 885   4                              
+ 886   4                                      FP_modeCompleteTips = cmp_NULL;
+ 887   4                                      
+ 888   4                              }break;
+ 889   3                      }
+ 890   2              }
+ 891   1      }
+ 892          
+ 893          /********************Ö¸ÎÆÄ£¿éÏß³ÌÄ£Ê½´¥·¢************************/
+ 894          void fpModeTrig_umAdd(void){
+ 895   1      
+ 896   1              Mode_umAdd_timeOutcnt            = umAddMode_TIMEOUT;
+ 897   1              process_FPworkMode                       = work_Mode_umAdd;             //Ö¸ÎÆÄ£¿éÏß³ÌÄ£Ê½ÇÐ»»£¬Æô¶¯Ñ§Ï°
+ 898   1              umNew_AddStep                            = umStepAdd_A;
+ 899   1              umNew_AddStep_StandBy            = umStepAdd_A;
+ 900   1              
+ 901   1              umNew_AddStepReapt_cmpHalfEN = 1;                               //°ëÍê³É·¢Êý¾Ý°üÊ¹ÄÜ£¬·ÀÖ¹¶à·¢£¬½øÐÐ±êÖ¾Î»ÏÞ´Î
+ 902   1              
+ 903   1              FP_modeCompleteTips              = cmp_NULL;
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 16  
+
+ 904   1      }
+ 905          
+ 906          void fpModeTrig_umDel(void){
+ 907   1      
+ 908   1              process_FPworkMode              = work_Mode_umDel;              //Ö¸ÎÆÄ£¿éÏß³ÌÄ£Ê½ÇÐ»»£¬Ä£°åÉ¾³ý
+ 909   1      }
+ 910          
+ 911          void fpModeTrig_umDetect(void){
+ 912   1      
+ 913   1              process_FPworkMode              = work_Mode_umDetect;   //Ö¸ÎÆÄ£¿éÏß³ÌÄ£Ê½ÇÐ»»£¬Ö÷¶¯¼ì²â
+ 914   1              FPvalidation_flg                = 0;
+ 915   1      }
+ 916          
+ 917          /********************´òÓ¡Ö¸ÎÆÕ¼Î»Ä£°å****************************/
+ 918          void logOut_fpID_place(void){
+ 919   1      
+ 920   1              unsigned char xdata log_info[100]               = {0};
+ 921   1              unsigned char xdata log_info_fpID[60]   = {0};
+ 922   1              unsigned char idata fpID_Tab[13]                = {0};
+ 923   1              
+ 924   1              unsigned char idata loop                                = 0; 
+ 925   1              
+ 926   1              EEPROM_read_n(EEPROM_ADDR_FP_STORE, &fpID_Tab[0], 13);
+ 927   1              
+ 928   1              for(loop = 0; loop < 13; loop ++)
+ 929   1                      sprintf(&log_info_fpID[loop * 3], "%02X ", (int)fpID_Tab[loop]);
+ 930   1              
+ 931   1              sprintf(log_info, "µ±Ç°Ö¸ÎÆÄ£°åÕ¼Î»Îª£º%s \n", log_info_fpID);
+ 932   1              LogDats(log_info, strlen(log_info));
+ 933   1      }
+ 934          
+ 935          
+ 936          bit fpID_allClear(void){
+ 937   1      
+ 938   1              u8 loop = 5;
+ 939   1              
+ 940   1              for(loop = 5; loop != 0; loop --){
+ 941   2              
+ 942   2                      FINGERPRINT_Cmd_Delete_All_Model();
+ 943   2                      FINGERPRINT_Recevice_Data(12);
+ 944   2                      
+ 945   2                      if(FINGERPRINT_RECEVICE_BUFFER[9] == 0)return 1;
+ 946   2              }
+ 947   1              
+ 948   1              return 0;
+ 949   1      }
+ 950          
+ 951          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   3791    ----
+   CONSTANT SIZE    =    532    ----
+   XDATA SIZE       =     16     262
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      58
+   IDATA SIZE       =     52      14
+   BIT SIZE         =      5    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+C51 COMPILER V9.54   SENSOR_FP                                                             08/17/2018 17:16:37 PAGE 17  
+
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

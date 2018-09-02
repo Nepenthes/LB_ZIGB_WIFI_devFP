@@ -1,0 +1,267 @@
+C51 COMPILER V9.54   HYM8564                                                               08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE HYM8564
+OBJECT MODULE PLACED IN .\Output\HYM8564.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Sensor\HYM8564.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_
+                    -lib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\HYM8564.lst) OBJECT(.\Output\HYM8564.obj)
+
+line level    source
+
+   1          #include "HYM8564.h"
+   2          
+   3          #include "dataTrans.h"
+   4          
+   5          #include "delay.h"
+   6          #include "soft_uart.h"
+   7          
+   8          #include "stdio.h"
+   9          #include "string.h"
+  10          
+  11          void Delay1us(void){            //@11.0592MHz
+  12   1      
+  13   1              _nop_();
+  14   1              _nop_();
+  15   1              _nop_();
+  16   1      }
+  17          
+  18          /****************IIC时序所需延时******************/
+  19          void DelayXus(unsigned int x){
+  20   1              
+  21   1              u16 pdata loop = IIC_Delay_GainFac * x; //延时因数
+  22   1              
+  23   1              while(-- loop){
+  24   2              
+  25   2                      Delay1us();
+  26   2              }
+  27   1      }
+  28          
+  29          void IIC_HYM8564_Start(void){ 
+  30   1      
+  31   1              IICA_ClrSCL;DelayXus(1);
+  32   1              IICA_SetSDA;DelayXus(1);
+  33   1              IICA_SetSCL;DelayXus(1);
+  34   1              IICA_ClrSDA;DelayXus(1);
+  35   1              IICA_ClrSCL;DelayXus(1);
+  36   1      }
+  37          
+  38          void IIC_HYM8564_Stop(void){       
+  39   1        
+  40   1              IICA_ClrSDA;DelayXus(1);
+  41   1              IICA_SetSCL;DelayXus(1);
+  42   1              IICA_SetSDA;DelayXus(1);
+  43   1              IICA_ClrSCL;DelayXus(5);
+  44   1              IICA_SetSCL;
+  45   1      }
+  46          
+  47          unsigned char IIC_HYM8564_RecvAck(void){
+  48   1      
+  49   1              unsigned char ack = 0;
+  50   1              unsigned int a = 0;
+  51   1              
+  52   1              IICA_ClrSCL;DelayXus(1);
+  53   1              IICA_SetSCL;DelayXus(1);
+  54   1              
+C51 COMPILER V9.54   HYM8564                                                               08/17/2018 17:16:37 PAGE 2   
+
+  55   1              while((IICA_GetSDA) && (a < 2000))a++;
+  56   1              
+  57   1              ack = IICA_GetSDA; DelayXus(1);
+  58   1              
+  59   1              IICA_ClrSCL;
+  60   1              
+  61   1              return ack;
+  62   1      }
+  63          
+  64          void IIC_HYM8564_SendByte(unsigned char dat){
+  65   1      
+  66   1              int i;
+  67   1              
+  68   1              IICA_ClrSCL;DelayXus(1);
+  69   1              
+  70   1              for (i = 7; i >= 0; i--){
+  71   2              
+  72   2                      IICA_ClrSCL;DelayXus(1);
+  73   2                      IICA_ClrSDA;DelayXus(1);
+  74   2                      
+  75   2                      if (((dat >> i) & 0x01) != 0){
+  76   3                      
+  77   3                              IICA_SetSDA;
+  78   3                              DelayXus(1);
+  79   3                      }else{
+  80   3                      
+  81   3                              IICA_ClrSDA;
+  82   3                              DelayXus(1);
+  83   3                      }       
+  84   2                      IICA_SetSCL;
+  85   2                      DelayXus(1);
+  86   2              }
+  87   1              
+  88   1              IICA_ClrSCL;
+  89   1              DelayXus(1);
+  90   1              return;
+  91   1      }
+  92          
+  93          unsigned char IIC_HYM8564_ReadByte(void){  
+  94   1      
+  95   1          int i;
+  96   1          unsigned char recv = 0;
+  97   1              
+  98   1          IICA_ClrSCL;DelayXus(1);
+  99   1              
+ 100   1          for(i = 7; i >= 0; i --) {  
+ 101   2          
+ 102   2              recv <<= 1;
+ 103   2                      IICA_SetSCL;DelayXus(1);
+ 104   2                      
+ 105   2                      if(IICA_GetSDA)recv |= 0x01;    
+ 106   2                      else{
+ 107   3                      
+ 108   3                              recv &= 0xfe;
+ 109   3                      }
+ 110   2                              
+ 111   2                      IICA_ClrSCL;
+ 112   2                      DelayXus(1);
+ 113   2          }
+ 114   1              
+ 115   1          return recv;
+ 116   1      }
+C51 COMPILER V9.54   HYM8564                                                               08/17/2018 17:16:37 PAGE 3   
+
+ 117          
+ 118          unsigned char read_HYM8564_byte(unsigned char add){
+ 119   1      
+ 120   1              unsigned char dat       = 0,
+ 121   1                                        temp  = 0;
+ 122   1      
+ 123   1              IIC_HYM8564_Start();
+ 124   1              IIC_HYM8564_SendByte(HYM8564_ADD_WR);
+ 125   1      
+ 126   1              temp = IIC_HYM8564_RecvAck();
+ 127   1      
+ 128   1              IIC_HYM8564_SendByte(add);
+ 129   1      
+ 130   1              temp = IIC_HYM8564_RecvAck();
+ 131   1      
+ 132   1              IIC_HYM8564_Start();
+ 133   1              IIC_HYM8564_SendByte(HYM8564_ADD_RD);
+ 134   1      
+ 135   1              temp = IIC_HYM8564_RecvAck();
+ 136   1              dat      = IIC_HYM8564_ReadByte();
+ 137   1      
+ 138   1              IIC_HYM8564_Stop();
+ 139   1      
+ 140   1              return(dat);
+ 141   1      }
+ 142          
+ 143          void write_HYM8564_byte(unsigned char add,unsigned char dat){
+ 144   1      
+ 145   1              unsigned char temp = 0;
+ 146   1              
+ 147   1              IIC_HYM8564_Start();
+ 148   1              IIC_HYM8564_SendByte(HYM8564_ADD_WR);
+ 149   1              
+ 150   1              temp = IIC_HYM8564_RecvAck();
+ 151   1              
+ 152   1              IIC_HYM8564_SendByte(add);
+ 153   1              
+ 154   1              temp = IIC_HYM8564_RecvAck();
+ 155   1              
+ 156   1              IIC_HYM8564_SendByte(dat);
+ 157   1              
+ 158   1              temp = IIC_HYM8564_RecvAck();
+ 159   1              
+ 160   1              IIC_HYM8564_Stop();
+ 161   1      }
+ 162          
+ 163          u8 DtoBCD(u8 num){
+ 164   1              
+ 165   1        return ((num / 10) << 4) + num % 10;
+ 166   1      }
+ 167          
+ 168          u8 BCDtoD(u8 num){
+ 169   1              
+ 170   1        return ((num & 0x0f) + ((num >> 4) * 10));
+ 171   1      }
+ 172          
+ 173          void timeSet(stt_Time code timeDats){
+ 174   1      
+ 175   1              write_HYM8564_byte(registerADDR_HYM8564_YEAR,   DtoBCD(timeDats.time_Year));
+ 176   1              write_HYM8564_byte(registerADDR_HYM8564_MONTH,  DtoBCD(timeDats.time_Month));
+ 177   1              if(timeDats.time_Week)          /*必须加判断，否则周会被设成0*///数值为0则保持原样
+ 178   1              write_HYM8564_byte(registerADDR_HYM8564_WEEK,   DtoBCD(timeDats.time_Week));
+C51 COMPILER V9.54   HYM8564                                                               08/17/2018 17:16:37 PAGE 4   
+
+ 179   1              write_HYM8564_byte(registerADDR_HYM8564_DAY,    DtoBCD(timeDats.time_Day));
+ 180   1              write_HYM8564_byte(registerADDR_HYM8564_HOUR,   DtoBCD(timeDats.time_Hour));
+ 181   1              write_HYM8564_byte(registerADDR_HYM8564_MINUTE, DtoBCD(timeDats.time_Minute));
+ 182   1              if(timeDats.time_Second)        //数值为0则保持
+ 183   1              write_HYM8564_byte(registerADDR_HYM8564_SECOND, DtoBCD(timeDats.time_Second));
+ 184   1      }
+ 185          
+ 186          void timeRead(stt_Time *timeDats){
+ 187   1      
+ 188   1              timeDats->time_Year     = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_YEAR));
+ 189   1              timeDats->time_Month    = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_MONTH));
+ 190   1              timeDats->time_Week     = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_WEEK));
+ 191   1              timeDats->time_Day              = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_DAY));
+ 192   1              timeDats->time_Hour     = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_HOUR));
+ 193   1              timeDats->time_Minute   = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_MINUTE));
+ 194   1              timeDats->time_Second   = BCDtoD(read_HYM8564_byte(registerADDR_HYM8564_SECOND));
+ 195   1      }
+ 196          
+ 197          void time_Logout(stt_Time code timeDats){
+ 198   1      
+ 199   1              unsigned char Log[80]   = {0};
+ 200   1              
+ 201   1              sprintf(Log, 
+ 202   1              "\n>>===时间戳===<<\n    20%d/%02d/%02d-W%01d\n        %02d:%02d:%02d\n", 
+ 203   1                              (int)timeDats.time_Year,
+ 204   1                              (int)timeDats.time_Month,
+ 205   1                              (int)timeDats.time_Day,
+ 206   1                              (int)timeDats.time_Week,
+ 207   1                              (int)timeDats.time_Hour,
+ 208   1                              (int)timeDats.time_Minute,
+ 209   1                              (int)timeDats.time_Second);
+ 210   1                              
+ 211   1              LogDats(Log, strlen(Log));
+ 212   1      //      uartObjWIFI_Send_String(Log, strlen(Log));
+ 213   1      }
+ 214          
+ 215          void HYM8564_Test(void){
+ 216   1      
+ 217   1              stt_Time code timeSet_Tab1 = {18, 5, 4, 3, 9, 38, 23};
+ 218   1              stt_Time valTime_Local     = {0};
+ 219   1              
+ 220   1              timeSet(timeSet_Tab1);
+ 221   1              
+ 222   1              while(1){
+ 223   2              
+ 224   2                      timeRead(&valTime_Local);
+ 225   2                      
+ 226   2                      time_Logout(valTime_Local);
+ 227   2                      
+ 228   2                      delayMs(500);
+ 229   2              }
+ 230   1      }
+ 231          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    921    ----
+   CONSTANT SIZE    =    161    ----
+   XDATA SIZE       =   ----     105
+   PDATA SIZE       =   ----       2
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+C51 COMPILER V9.54   HYM8564                                                               08/17/2018 17:16:37 PAGE 5   
+
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

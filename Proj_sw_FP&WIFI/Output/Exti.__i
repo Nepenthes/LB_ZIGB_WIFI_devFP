@@ -1,0 +1,1 @@
+"std_Lib\Exti.c" OPTIMIZE (8,SPEED) BROWSE INCDIR(.\Usr;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG OBJECTEXTEND PRINT(.\Listing\Exti.lst) OBJECT(.\Output\Exti.obj)

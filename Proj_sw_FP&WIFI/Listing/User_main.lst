@@ -1,0 +1,244 @@
+C51 COMPILER V9.54   USER_MAIN                                                             08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE USER_MAIN
+OBJECT MODULE PLACED IN .\Output\User_main.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Usr\User_main.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_l
+                    -ib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\User_main.lst) OBJECT(.\Output\User_main.obj)
+
+line level    source
+
+   1          #include "STC15Fxxxx.H"
+   2          
+   3          #include "typeDf.h"
+   4          #include "datasReference.h"
+   5          #include "Tips.h"
+   6          #include "dataTrans.h"
+   7          #include "Timer.h"
+   8          #include "usrKin.h"
+   9          #include "Relay.h"
+  10          #include "appTimer.h"
+  11          #include "wifi_LPT220.h"
+  12          #include "dataManage.h"
+  13          #include "HYM8564.h"
+  14          #include "timerAct.h"
+  15          
+  16          #include "delay.h"
+  17          #include "EEPROM.h"
+  18          #include "soft_uart.h"
+  19          
+  20          #include "string.h"
+  21          #include "stdio.h"
+  22          #include "stdlib.h"
+  23          
+  24          extern bit                              UsrKEY_comfirm;
+  25          extern threadFP_Mode    process_FPworkMode;
+  26          extern stt_stepAdd              umNew_AddStep;
+  27          
+  28          extern u8 idata                 val_DcodeCfm;
+  29          
+  30          typedef const void (*task_Func)(void);
+  31          
+  32          typedef struct{
+  33          
+  34                  task_Func tFunc;                //任务函数
+  35                  u8                tCnt;                 //计时缓存
+  36                  u8                tPeriod;              //计时周期
+  37          }task_Nature;
+  38          
+  39          void WDT_Confing(void){
+  40   1      
+  41   1              WDT_CONTR  = 0x05;      //设狗
+  42   1              WDT_CONTR |= 0x20;      //放狗
+  43   1      }
+  44          
+  45          void Bsp_Init(void){            //初始化顺序不能动！！！
+  46   1              
+  47   1              ledTips_Init            ();     //Tips_LED引脚初始化，首先初始化，更新提示灯
+  48   1              Beep_Init                       ();     //Tips_Deep引脚初始化
+  49   1              relay_Init                      ();     //继电器引脚初始化
+  50   1              appTimer0_Init          ();     //硬件定时器初始化
+  51   1              WIFI_pinInit            ();     //WIFI模块外部控制引脚初始化
+  52   1              uartObjWIFI_Init        ();     //WIFI串口硬件初始化
+  53   1              uartObjFP_Init          ();     //指纹模块串口硬件初始化
+  54   1              
+C51 COMPILER V9.54   USER_MAIN                                                             08/17/2018 17:16:37 PAGE 2   
+
+  55   1              AUXR    &= 0xfd;        //xdata 使能
+  56   1              EA              = 1;            //开中断后才可以使用串口！
+  57   1      }
+  58          
+  59          void Config_Init(void){         /*本初始化必须在Bsp_Init() 之后！*///配置顺序不能动！！！
+  60   1      
+  61   1              birthDay_Judge          ();     //生日判断
+  62   1              
+  63   1      #if(IF_REBORN == 1)
+              
+                      LogString("产品已重新转世，请修改宏定义后重新编译生成固件！\n");
+                      while(1);
+              #endif
+  68   1              
+  69   1              //读取一次MAC，进行状态更新
+  70   1              MAC_ID_Relaes           ();             
+  71   1              
+  72   1              //WIFI模块配置初始化
+  73   1              while(!WIFI_configInit  ());    
+  74   1              
+  75   1              //读取一次指纹占位存储数据，进行状态更新
+  76   1              logOut_fpID_place       ();             
+  77   1              
+  78   1              //放狗
+  79   1              WDT_Confing                     ();             
+  80   1              
+  81   1              //过渡延时,系统准备完成
+  82   1              delayMs(2000);
+  83   1              SYS_status_Mode = statusMode_standBy;
+  84   1              beeps(10);
+  85   1              SYS_status_Mode = statusMode_NULL;
+  86   1              
+  87   1              //指纹模块线程默认至主动检测模式
+  88   1              fpModeTrig_umDetect     ();             
+  89   1      }
+  90          
+  91          void threadMain_Necessary(void){        //运行周期严格要求不高的线程
+  92   1      
+  93   1              DcodeScan               ();     //拨码扫描
+  94   1              thread_moudleFP ();     //指纹模块驱动线程
+  95   1              thread_Relay    ();     //继电器驱动线程
+  96   1              UsrKEYScan              (software_Reset, //外部按键扫描
+  97   1                                               WIFI_hwSmartLink,
+  98   1                                               Factory_recover);      
+  99   1      }
+ 100          
+ 101          void thread_Main(void){
+ 102   1              
+ 103   1      #define task_Num 3      //关键线程数
+ 104   1              
+ 105   1      //      u16 code countLoop      = 5;
+ 106   1              u8               task_loop      = 0;
+ 107   1      
+ 108   1              task_Nature xdata task_Tab[task_Num] = {        /*关键线程任务函数表*///运行周期要求高的线程
+ 109   1              
+ 110   1                      {thread_dataTrans,                      0,      2},
+ 111   1                      {thread_Timing,                         0,  1},
+ 112   1                      {thread_LocalStaus_Release,     0,      1},
+ 113   1              };
+ 114   1              
+ 115   1              for(;;){
+ 116   2                      
+C51 COMPILER V9.54   USER_MAIN                                                             08/17/2018 17:16:37 PAGE 3   
+
+ 117   2                      for(task_loop = 0; task_loop < task_Num; task_loop ++){
+ 118   3                      
+ 119   3                              if(task_Tab[task_loop].tCnt < task_Tab[task_loop].tPeriod)task_Tab[task_loop].tCnt ++;
+ 120   3                              else{
+ 121   4                              
+ 122   4                                      task_Tab[task_loop].tCnt = 0;
+ 123   4                                      
+ 124   4                                      /******task running here******/
+ 125   4                                      task_Tab[task_loop].tFunc();
+ 126   4                              }                       
+ 127   3                      }
+ 128   2                      
+ 129   2                      threadMain_Necessary();         //无运行周期要求线程
+ 130   2                      
+ 131   2      //              delayMs(countLoop);                     //线程时间轮转周期
+ 132   2              }
+ 133   1      }
+ 134          
+ 135          /**测试函数**/
+ 136          void test_process(void){
+ 137   1              
+ 138   1              uartObjWIFI_Init        ();
+ 139   1              EA              = 1;
+ 140   1              
+ 141   1              HYM8564_Test    ();
+ 142   1              
+ 143   1      //      Beep_Init();
+ 144   1      //      Beep_Test();
+ 145   1      //      Beep_Tips(3, 8, 3, 10, 10);
+ 146   1      }
+ 147          
+ 148          /***main***/
+ 149          int main(void){
+ 150   1              
+ 151   1              const u16 log_Period    = 1;
+ 152   1                        u16 log_Cnt           = 0;
+ 153   1                        u8  log_imfo[40]      = {0},
+ 154   1                                test_ip[4]    = {0};
+ 155   1                                
+ 156   1      //      WIFI_pinInit            ();     //WIFI模块外部控制引脚初始化
+ 157   1      //      uartObjWIFI_Init        ();     //WIFI串口硬件初始化
+ 158   1      //                        
+ 159   1      //      AUXR    &= 0xfd;        //xdata 使能
+ 160   1      //      EA              = 1;            //开中断后才可以使用串口！
+ 161   1      //        
+ 162   1      //      while(1){
+ 163   1      //      
+ 164   1      //              WIFI_funcPIN_nReload = WIFI_pinDISEN;
+ 165   1      //              WIFI_funcPIN_nRst       = WIFI_pinEN;   //硬件复位一次
+ 166   1      //              delayMs(1000);
+ 167   1      //              WIFI_funcPIN_nRst       = WIFI_pinDISEN;
+ 168   1      //              delayMs(5000);
+ 169   1      
+ 170   1      ////            while(WIFI_tipsPIN_nReady)delayMs(100);
+ 171   1      //              
+ 172   1      //              WIFI_funcPIN_nReload = WIFI_pinEN;
+ 173   1      //              delayMs(5000);
+ 174   1      //              WIFI_funcPIN_nReload = WIFI_pinDISEN;
+ 175   1      //              delayMs(10000);
+ 176   1      //              
+ 177   1      //              uartObjWIFI_Send_Byte('+');
+ 178   1      //              delayMs(200);
+C51 COMPILER V9.54   USER_MAIN                                                             08/17/2018 17:16:37 PAGE 4   
+
+ 179   1      //              uartObjWIFI_Send_Byte('+');
+ 180   1      //              delayMs(200);
+ 181   1      //              uartObjWIFI_Send_Byte('+');
+ 182   1      //              delayMs(200);
+ 183   1      //              uartObjWIFI_Send_Byte('+');
+ 184   1      //              delayMs(200);
+ 185   1      //              uartObjWIFI_Send_Byte('+');
+ 186   1      //              delayMs(200);
+ 187   1      //              uartObjWIFI_Send_Byte('+');
+ 188   1      //              delayMs(200);
+ 189   1      //              uartObjWIFI_Send_Byte('+');
+ 190   1      //              delayMs(200);
+ 191   1      //              uartObjWIFI_Send_Byte('+');
+ 192   1      //              delayMs(200);
+ 193   1      //      }
+ 194   1              
+ 195   1              LogString("i'm uart for log !!!\n");
+ 196   1                                
+ 197   1              while(!P34);
+ 198   1              
+ 199   1              Bsp_Init();               
+ 200   1              Config_Init();
+ 201   1              
+ 202   1              LogString("Product_Lanbon initialize complete, Hellow World!!!\n");
+ 203   1              
+ 204   1              thread_Main();
+ 205   1              
+ 206   1      //      test_process();
+ 207   1      //      while(1);
+ 208   1              
+ 209   1              return 0;
+ 210   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    359    ----
+   CONSTANT SIZE    =    134    ----
+   XDATA SIZE       =   ----      64
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

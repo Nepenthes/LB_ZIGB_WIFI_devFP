@@ -1,0 +1,223 @@
+C51 COMPILER V9.54   RELAY                                                                 08/17/2018 17:16:38 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE RELAY
+OBJECT MODULE PLACED IN .\Output\Relay.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Actuator\Relay.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_
+                    -lib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\Relay.lst) OBJECT(.\Output\Relay.obj)
+
+line level    source
+
+   1          #include "Relay.h"
+   2          #include "Tips.h"
+   3          #include "usrKin.h"
+   4          
+   5          #include "eeprom.h"
+   6          
+   7          #include "dataTrans.h"
+   8          #include "datasReference.h"
+   9          
+  10          //*********************指纹模块相关变量引用区*********************/
+  11          extern bit                              FPvalidation_flg;
+  12          
+  13          //*********************拨码部分相关变量引用区*********************/
+  14          extern u8 idata                 val_DcodeCfm;
+  15          extern bit                              switch_NONC_method;
+  16          
+  17          //*********************数据传输相关变量引用区*********************/
+  18          extern switch_Status    swStatus_fromUsr; //上位机直接下达的开关命令
+  19          
+  20          //*********************定时检测进程相关变量引用区*********************/
+  21          extern switch_Status    swStatus_fromTim;  //定时时刻到达时开关响应动作状态
+  22          
+  23          /********************************本地文件变量定义区********************************/
+  24          rly_timFun                      relayTIM                                = {false, 1000};                //定时属性
+  25          threadRelay_Mode        process_RelayWorkMode   = work_Mode_flip;               //主线程工作模式
+  26          status_ifSave           relayStatus_ifSave              = statusSave_disable;   //开关记忆使能变量
+  27          bit                             status_Relay                    = false;                                //继电器状态_仅仅暴露给其它线程读取状态使用，如需更变状态必须调用函数r
+             -elay_Act();,切不可直接改写本状态值
+  28          
+  29          /*----------------------------------------------------------------*/
+  30          /*开关继电器初始化*/
+  31          void relay_Init(void){
+  32   1      
+  33   1              u8 statusTemp = 0;
+  34   1              
+  35   1              P3M1 &= 0xF7; 
+  36   1              P3M0 |= 0x08;
+  37   1              
+  38   1              CON_RELAY = 0;
+  39   1              
+  40   1              if(!Dcode2){
+  41   2                      
+  42   2                      EEPROM_read_n(EEPROM_ADDR_relayStatus, &statusTemp, 1);
+  43   2                      status_Relay = statusTemp;
+  44   2                      CON_RELAY        = status_Relay;
+  45   2              }else{
+  46   2              
+  47   2                      statusTemp       = 0;
+  48   2                      coverEEPROM_write_n(EEPROM_ADDR_relayStatus, &statusTemp, 1);
+  49   2                      CON_RELAY        = status_Relay;
+  50   2              }
+  51   1      }
+  52          
+  53          /*开关动作*/
+C51 COMPILER V9.54   RELAY                                                                 08/17/2018 17:16:38 PAGE 2   
+
+  54          void relay_Act(rly_methodType act_Method, bool timer_EN){
+  55   1              
+  56   1              u8 statusTemp = 0;
+  57   1              
+  58   1              Beep_Tips(1, 8, 2, 20, 10);     //提示音
+  59   1              
+  60   1              switch(act_Method){
+  61   2              
+  62   2                      case relay_flip:{
+  63   3                      
+  64   3                              status_Relay = !status_Relay;
+  65   3                              
+  66   3                              relayTIM.tim_EN = false;
+  67   3                      }break;
+  68   2                      
+  69   2                      case relay_on:{
+  70   3                      
+  71   3                              (switch_NONC_method)?(status_Relay = actRelay_OFF):(status_Relay = actRelay_ON);
+  72   3                              
+  73   3                              if(timer_EN)relayTIM.tim_EN = true;
+  74   3                      }break;
+  75   2                      
+  76   2                      case relay_off:{
+  77   3                      
+  78   3                              (switch_NONC_method)?(status_Relay = actRelay_ON):(status_Relay = actRelay_OFF);
+  79   3                              
+  80   3                              relayTIM.tim_EN = false;
+  81   3                      }break;
+  82   2              }
+  83   1              
+  84   1              CON_RELAY = status_Relay;
+  85   1              
+  86   1              if(relayStatus_ifSave == statusSave_enable){    //开关状态记忆
+  87   2              
+  88   2                      statusTemp = status_Relay;
+  89   2                      coverEEPROM_write_n(EEPROM_ADDR_relayStatus, &statusTemp, 1);
+  90   2              }
+  91   1      }
+  92          
+  93          /*继电器主线程*/
+  94          void thread_Relay(void){
+  95   1      
+  96   1              switch(process_RelayWorkMode){
+  97   2              
+  98   2                      /*翻转模式*///开关开启或关闭全部依赖指令，指令来一次开，再来一次就关，依此反复
+  99   2                      case work_Mode_flip:{
+ 100   3                      
+ 101   3                              if(FPvalidation_flg){   //本地触摸开关业务逻辑
+ 102   4                              
+ 103   4                                      FPvalidation_flg = 0;
+ 104   4                                      relay_Act(relay_flip, 0);
+ 105   4                              }
+ 106   3                              
+ 107   3                              switch(swStatus_fromUsr){       //上位机下达开关业务逻辑
+ 108   4                              
+ 109   4                                      case swStatus_on:{
+ 110   5                                      
+ 111   5                                              swStatus_fromUsr = swStatus_null;
+ 112   5                                              relay_Act(relay_on, 0);
+ 113   5                                      }break;
+ 114   4                                      
+ 115   4                                      case swStatus_off:{
+C51 COMPILER V9.54   RELAY                                                                 08/17/2018 17:16:38 PAGE 3   
+
+ 116   5                                      
+ 117   5                                              swStatus_fromUsr = swStatus_null;
+ 118   5                                              relay_Act(relay_off, 0);
+ 119   5                                      }break;
+ 120   4                                      
+ 121   4                                      default:break;
+ 122   4                              }
+ 123   3                              
+ 124   3                              switch(swStatus_fromTim){       //定时时刻表触发开关业务逻辑
+ 125   4                              
+ 126   4                                      case swStatus_on:{
+ 127   5                                      
+ 128   5                                              swStatus_fromTim = swStatus_null;
+ 129   5                                              relay_Act(relay_on, 0);
+ 130   5                                      }break;
+ 131   4                                      
+ 132   4                                      case swStatus_off:{
+ 133   5                                      
+ 134   5                                              swStatus_fromTim = swStatus_null;
+ 135   5                                              relay_Act(relay_off, 0);
+ 136   5                                      }break;
+ 137   4                                      
+ 138   4                                      default:break;
+ 139   4                              }
+ 140   3                      }break;
+ 141   2                      
+ 142   2                      /*延时模式*///延时时间到达后自动关闭
+ 143   2                      case work_Mode_conuter:{        //本地触摸开关业务逻辑
+ 144   3                      
+ 145   3                              if(FPvalidation_flg){
+ 146   4                              
+ 147   4                                      FPvalidation_flg = 0;
+ 148   4                                      relay_Act(relay_on, 1);
+ 149   4                              }
+ 150   3                              
+ 151   3                              switch(swStatus_fromUsr){       //上位机下达开关业务逻辑
+ 152   4                              
+ 153   4                                      case swStatus_on:{
+ 154   5                                      
+ 155   5                                              swStatus_fromUsr = swStatus_null;
+ 156   5                                              relay_Act(relay_on, 1);//延时使能
+ 157   5                                      }break;
+ 158   4                                      
+ 159   4                                      case swStatus_off:{
+ 160   5                                      
+ 161   5                                              swStatus_fromUsr = swStatus_null;
+ 162   5                                              relay_Act(relay_off, 0);
+ 163   5                                      }break;
+ 164   4                                      
+ 165   4                                      default:break;
+ 166   4                              }
+ 167   3                              
+ 168   3                              switch(swStatus_fromTim){       //定时时刻表触发开关业务逻辑
+ 169   4                              
+ 170   4                                      case swStatus_on:{
+ 171   5                                      
+ 172   5                                              swStatus_fromTim = swStatus_null;
+ 173   5                                              relay_Act(relay_on, 1);//延时使能
+ 174   5                                      }break;
+ 175   4                                      
+ 176   4                                      case swStatus_off:{
+ 177   5                                      
+C51 COMPILER V9.54   RELAY                                                                 08/17/2018 17:16:38 PAGE 4   
+
+ 178   5                                              swStatus_fromTim = swStatus_null;
+ 179   5                                              relay_Act(relay_off, 0);
+ 180   5                                      }break;
+ 181   4                                      
+ 182   4                                      default:break;
+ 183   4                              }
+ 184   3                      }break;
+ 185   2                      
+ 186   2                      default:break;
+ 187   2              }
+ 188   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    360    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =      5       3
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      1       1
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

@@ -1,0 +1,52 @@
+C51 COMPILER V9.54   PARS_METHOD                                                           08/17/2018 17:16:38 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE PARS_METHOD
+OBJECT MODULE PLACED IN .\Output\pars_Method.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Usr_lib\pars_Method.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.
+                    -\Usr_lib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\pars_Method.lst) OBJECT(.\Output\pars_Method.
+                    -obj)
+
+line level    source
+
+   1          #include "pars_Method.h"
+   2          #include "string.h"
+   3          
+   4          void *memmem(void *start, unsigned char s_len, void *find, unsigned char f_len){
+   5   1      
+   6   1              unsigned char len       = 0;
+   7   1                              char *p         = start, 
+   8   1                                       *q             = find;
+   9   1              
+  10   1              while((p - (char *)start + f_len) <= s_len){
+  11   2              
+  12   2                      while(*p ++ == *q ++){
+  13   3                      
+  14   3                              len ++;
+  15   3                              if(len == f_len)return (p - f_len);
+  16   3                      }
+  17   2                      
+  18   2                      q       = find;
+  19   2                      len = 0;
+  20   2              }
+  21   1              
+  22   1              return NULL;
+  23   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    212    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----      15
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

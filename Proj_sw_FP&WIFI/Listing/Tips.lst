@@ -1,0 +1,222 @@
+C51 COMPILER V9.54   TIPS                                                                  08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE TIPS
+OBJECT MODULE PLACED IN .\Output\Tips.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Usr\Tips.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_lib;.\
+                    -Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\Tips.lst) OBJECT(.\Output\Tips.obj)
+
+line level    source
+
+   1          #include "Tips.h"
+   2          
+   3          #include "wifi_LPT220.h"
+   4          
+   5          #include "GPIO.h"
+   6          #include "delay.h"
+   7          
+   8          //*******************WIFI«˝∂Ø±‰¡ø“˝”√«¯***************************/
+   9          extern status_Mode                 SYS_status_Mode;     //œµÕ≥◊¥Ã¨
+  10          
+  11          #define spect_size 15
+  12          const u8 spect_len[spect_size]  = {2,2,2,4,4,4,7,7,7,6,5,3,3};
+  13          const u8 spect[spect_size][8]   = {
+  14          
+  15                  {3,1},//0
+  16                  {7,2},//1
+  17                  {3,3},//2
+  18                  {1,2,4,5},//3
+  19                  {5,4,3,2},//4
+  20                  {1,2,6,7},//5
+  21                  {5,5,6,4,3,1,5},//6
+  22                  {7,7,5,6,1,2,4},//7
+  23                  {6,6,2,3,1,4,7},//8
+  24                  {1,2,5,6,3,4},//9
+  25                  {1,2,3,4,6},//10
+  26                  {5,2,2},//11
+  27                  {7,4,4},//12
+  28          };
+  29          
+  30          void ledTips_Init(void){
+  31   1      
+  32   1              GPIO_InitTypeDef GPIO_Tips;
+  33   1              
+  34   1              GPIO_Tips.Mode  = GPIO_OUT_OD;
+  35   1              GPIO_Tips.Pin   = GPIO_Pin_1 | GPIO_Pin_3;
+  36   1              GPIO_Inilize(GPIO_P2, &GPIO_Tips);
+  37   1              
+  38   1              GPIO_Tips.Pin   = GPIO_Pin_4;
+  39   1              GPIO_Inilize(GPIO_P1, &GPIO_Tips);
+  40   1      
+  41   1              led_darkAll();  //Tips_LED»´πÿ
+  42   1              led_Act(red, led_on);
+  43   1              
+  44   1              SYS_status_Mode = statusMode_NULL;      //œµÕ≥◊¥Ã¨≥ı ºªØ
+  45   1      }       
+  46          
+  47          void Beep_Init(void){
+  48   1      
+  49   1              P2M1 &= 0xBF;
+  50   1              P2M0 &= 0xBF;
+  51   1              
+  52   1              beepTips_s(5, 10, 6);
+  53   1      }
+  54          
+C51 COMPILER V9.54   TIPS                                                                  08/17/2018 17:16:37 PAGE 2   
+
+  55          void led_darkAll(void){
+  56   1      
+  57   1              LED_R = LED_G = LED_B = led_statusOFF;
+  58   1      }
+  59          
+  60          void beeps_delay(u16 cnt){
+  61   1      
+  62   1              while(-- cnt){
+  63   2                      
+  64   2                      NOP20();
+  65   2              }
+  66   1      }
+  67          
+  68          void led_Act(led_color color,led_actMethod method){
+  69   1      
+  70   1              static bit ledStatus_R = led_statusOFF,
+  71   1                                 ledStatus_G = led_statusOFF,
+  72   1                                 ledStatus_B = led_statusOFF;
+  73   1              
+  74   1              switch(color){
+  75   2              
+  76   2                      case red:{
+  77   3                              
+  78   3                              LED_G = LED_B = led_statusOFF;
+  79   3                      
+  80   3                              switch(method){
+  81   4                              
+  82   4                                      case led_on:    ledStatus_R = led_statusON;
+  83   4                                              
+  84   4                                      case led_off:   ledStatus_R = led_statusOFF;
+  85   4                                              
+  86   4                                      case led_flip:  ledStatus_R = !ledStatus_R;
+  87   4                                      
+  88   4                                      default:break;
+  89   4                              }LED_R = ledStatus_R;
+  90   3                      }break;
+  91   2                              
+  92   2                      case green:{
+  93   3                      
+  94   3                              LED_R = LED_B = led_statusOFF;
+  95   3                              
+  96   3                              switch(method){
+  97   4                              
+  98   4                                      case led_on:    ledStatus_G = led_statusON;
+  99   4                                              
+ 100   4                                      case led_off:   ledStatus_G = led_statusOFF;
+ 101   4                                              
+ 102   4                                      case led_flip:  ledStatus_G = !ledStatus_G;
+ 103   4                                      
+ 104   4                                      default:break;
+ 105   4                              }LED_G = ledStatus_G;
+ 106   3                      }break;
+ 107   2                              
+ 108   2                      case blue:{
+ 109   3                              
+ 110   3                              LED_R = LED_G = led_statusOFF;
+ 111   3                      
+ 112   3                              switch(method){
+ 113   4                              
+ 114   4                                      case led_on:    ledStatus_B = led_statusON;
+ 115   4                                              
+ 116   4                                      case led_off:   ledStatus_B = led_statusOFF;
+C51 COMPILER V9.54   TIPS                                                                  08/17/2018 17:16:37 PAGE 3   
+
+ 117   4                                              
+ 118   4                                      case led_flip:  ledStatus_B = !ledStatus_B;
+ 119   4                                      
+ 120   4                                      default:break;
+ 121   4                              }LED_B = ledStatus_B;
+ 122   3                      }break;
+ 123   2                              
+ 124   2                      default:break;
+ 125   2              }
+ 126   1      }
+ 127          
+ 128          void Beep_Tips(u8 method, u8 loud, u8 repeat, u8 delay_A, u8 delay_B){  //“Ùµ˜£¨ “Ù¡ø£¨ ¥Œ ˝£¨ œÏ ±≥§£¨ æ≤ 
+             -±≥§
+ 129   1      
+ 130   1              u16 loop        = 0,
+ 131   1                  loopA       = 0,
+ 132   1                  loopB       = 0;
+ 133   1              
+ 134   1              for(loop = repeat; loop != 0; loop --){
+ 135   2      
+ 136   2                      for(loopB = 10 * delay_A; loopB != 0; loopB --){
+ 137   3                      
+ 138   3                              for(loopA = (u16)method * 100; loopA != 0; loopA --){
+ 139   4                              
+ 140   4                                      _nop_();
+ 141   4                                      (loopA >= loud * 10)?(PIN_BEEP = 1):(PIN_BEEP = 0);
+ 142   4                              }
+ 143   3                      }
+ 144   2                      
+ 145   2                      if(delay_B)delayMs(delay_B * 10);
+ 146   2              }
+ 147   1              
+ 148   1              PIN_BEEP = 1;
+ 149   1      }
+ 150          
+ 151          void beepTips(u8 tones, u16 time, u8 vol){      //“Ùµ˜£¨  ±≥§£¨ “Ù¡ø
+ 152   1      
+ 153   1              const u8 vol_fa = 10;
+ 154   1              u16 tones_base  = tones * 50 + 100;
+ 155   1              u16 cycle               = time * 1000 / tones_base;
+ 156   1              u16 loop;
+ 157   1              
+ 158   1              for(loop = 0; loop < cycle; loop ++){
+ 159   2              
+ 160   2                      PIN_BEEP = 0;
+ 161   2                      beeps_delay(tones_base / vol_fa * vol);
+ 162   2                      PIN_BEEP = 1;
+ 163   2                      beeps_delay(tones_base / vol_fa * (vol_fa - vol));
+ 164   2              }
+ 165   1      }
+ 166          
+ 167          void beepTips_s(u8 tones, u16 time, u8 vol){    //“Ùµ˜£¨  ±≥§*100£¨ “Ù¡ø
+ 168   1      
+ 169   1              u8 loop = time;
+ 170   1              
+ 171   1              for(loop = time; loop != 0; loop --)beepTips(tones, 100, vol);
+ 172   1      }
+ 173          
+ 174          void beeps(u8 num){
+ 175   1      
+ 176   1              u8 loop;
+ 177   1              
+C51 COMPILER V9.54   TIPS                                                                  08/17/2018 17:16:37 PAGE 4   
+
+ 178   1              for(loop = 0; loop < spect_len[num]; loop ++)
+ 179   1                      beepTips_s(spect[num][loop], 3, 8);
+ 180   1      }
+ 181          
+ 182          void Beep_Test(void){
+ 183   1      
+ 184   1              beeps(6);
+ 185   1              beeps(7);
+ 186   1              beeps(8);
+ 187   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    695    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =    135      27
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =      3    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

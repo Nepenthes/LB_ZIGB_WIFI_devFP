@@ -1,0 +1,213 @@
+C51 COMPILER V9.54   DATAMANAGE                                                            08/17/2018 17:16:37 PAGE 1   
+
+
+C51 COMPILER V9.54, COMPILATION OF MODULE DATAMANAGE
+OBJECT MODULE PLACED IN .\Output\dataManage.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE Usr\dataManage.c LARGE OMF2 OPTIMIZE(8,SPEED) BROWSE INCDIR(.\Usr;.\Usr_
+                    -lib;.\Sensor;.\Actuator;.\data_Trans;.\std_Lib) DEBUG PRINT(.\Listing\dataManage.lst) OBJECT(.\Output\dataManage.obj)
+
+line level    source
+
+   1          #include "dataManage.h"
+   2          #include "datasReference.h"
+   3          #include "sensor_FP.h"
+   4          #include "wifi_LPT220.h"
+   5          #include "Tips.h"
+   6          
+   7          #include "string.h"
+   8          #include "stdio.h"
+   9          
+  10          #include "soft_uart.h"
+  11          #include "eeprom.h"
+  12          #include "delay.h"
+  13          
+  14          //*********************指纹模块相关变量引用区********************/
+  15          extern threadFP_Mode    process_FPworkMode;
+  16          
+  17          //*******************WIFI驱动变量引用区***************************/
+  18          extern status_Mode                 SYS_status_Mode;     //系统状态
+  19          
+  20          /********************本地文件变量创建区******************/
+  21          unsigned char xdata MAC_ID[6] = {0};
+  22          
+  23          /*------------------------------------------------------------------*/
+  24          void software_Reset(void){
+  25   1      
+  26   1              process_FPworkMode      = work_Mode_NULL;                       //指纹模块失能
+  27   1              SYS_status_Mode         = statusMode_Reset;                     //系统状态更新
+  28   1              
+  29   1              Beep_Tips(2, 8, 3, 20, 20);     //提示音
+  30   1              
+  31   1              LogString("软件复位已触发. \n");
+  32   1              ((void(code *)(void))0x0000)();
+  33   1              
+  34   1              //无需状态恢复，重启自动初始化
+  35   1      }
+  36          
+  37          void MAC_ID_Relaes(void){
+  38   1      
+  39   1              unsigned char xdata log_info[50]        = {0};
+  40   1              unsigned char code *id_ptr                      = ROMADDR_ROM_STC_ID;
+  41   1              
+  42   1              LogDats(log_info, strlen(log_info));
+  43   1      
+  44   1              memcpy(MAC_ID, id_ptr - 6, 6); //顺序向前，往前读，只取后六位
+  45   1              
+  46   1              sprintf(log_info, "MAC地址更新：%02X %02X %02X %02X %02X %02X\n", 
+  47   1                              (int)MAC_ID[0],
+  48   1                              (int)MAC_ID[1],
+  49   1                              (int)MAC_ID[2],
+  50   1                              (int)MAC_ID[3],
+  51   1                              (int)MAC_ID[4],
+  52   1                              (int)MAC_ID[5]);
+  53   1                              
+  54   1              LogDats(log_info, strlen(log_info));
+C51 COMPILER V9.54   DATAMANAGE                                                            08/17/2018 17:16:37 PAGE 2   
+
+  55   1      }
+  56          
+  57          void Factory_recover(void){
+  58   1      
+  59   1              u8 xdata log_info[30]           = {0};
+  60   1              u8               eeprom_buffer[20]      = {0};
+  61   1              u8 code  IP_default[4]          = {47,52,5,108};                //默认香港服务器
+  62   1              
+  63   1              Beep_Tips(1, 8, 3, 100, 20);    //提示
+  64   1              
+  65   1              WIFI_hwRestoreFactory();
+  66   1              
+  67   1              EEPROM_SectorErase(EEPROM_ADDR_START);          //首次启动EEPROM擦除
+  68   1              delayMs(10);
+  69   1              
+  70   1              eeprom_buffer[0] = BIRTHDAY_FLAG;                       //生日标记
+  71   1              EEPROM_write_n(EEPROM_ADDR_BirthdayMark, &eeprom_buffer[0], 1);
+  72   1              delayMs(10);
+  73   1              
+  74   1              eeprom_buffer[0] = 0;                                           //设备锁解开
+  75   1              EEPROM_write_n(EEPROM_ADDR_deviceLockFLAG, &eeprom_buffer[0], 1);
+  76   1              delayMs(10);    
+  77   1              
+  78   1              memset(eeprom_buffer, 0, 12 * sizeof(u8));      //普通开关定时时刻表清零
+  79   1              EEPROM_write_n(EEPROM_ADDR_swTimeTab, &eeprom_buffer[0], 13);
+  80   1              delayMs(10);
+  81   1              
+  82   1              memset(eeprom_buffer, 0, 12 * sizeof(u8));      //指纹权限定时时刻表清零
+  83   1              EEPROM_write_n(EEPROM_ADDR_permissionTimeTab, &eeprom_buffer[0], 13);
+  84   1              delayMs(10);
+  85   1              
+  86   1              memset(eeprom_buffer, 0, 4 * sizeof(u8));       //指纹权限定时时长表清零
+  87   1              EEPROM_write_n(EEPROM_ADDR_permissionKeepTab, &eeprom_buffer[0], 13);
+  88   1              delayMs(10);
+  89   1              
+  90   1              memset(eeprom_buffer, 0, 13 * sizeof(u8));      //指纹模板清零
+  91   1              EEPROM_write_n(EEPROM_ADDR_FP_STORE, &eeprom_buffer[0], 13);
+  92   1              delayMs(10);
+  93   1              
+  94   1              memcpy(eeprom_buffer, IP_default, 4);           //服务器IP模板设置默认
+  95   1              EEPROM_write_n(EEPROM_ADDR_serverIP_record, &eeprom_buffer[0], 4);
+  96   1              delayMs(10);
+  97   1              
+  98   1              while(!fpID_allClear());                //清空指纹库
+  99   1              delayMs(10);
+ 100   1              
+ 101   1              LogString("EEPROM恢复出厂设置,内部存储清空！\n");
+ 102   1      }
+ 103          
+ 104          void birthDay_Judge(void){
+ 105   1              
+ 106   1              u8 xdata log_info[30]           = {0};
+ 107   1              u8               eeprom_buffer[20]      = {0};
+ 108   1              u8 code  IP_default[4]          = {47,52,5,108};                //默认香港服务器
+ 109   1              
+ 110   1              delayMs(10);
+ 111   1              
+ 112   1      #if(IF_REBORN != 1)             //出厂前配置清空——转世设置，修改头文件IF_REBORN 值即可
+ 113   1              
+ 114   1              EEPROM_read_n(EEPROM_ADDR_BirthdayMark, &eeprom_buffer[0], 1);
+ 115   1              delayMs(10);
+ 116   1              
+C51 COMPILER V9.54   DATAMANAGE                                                            08/17/2018 17:16:37 PAGE 3   
+
+ 117   1              if(BIRTHDAY_FLAG != eeprom_buffer[0]){
+ 118   2              
+ 119   2                      EEPROM_SectorErase(EEPROM_ADDR_START);          //首次启动EEPROM擦除
+ 120   2                      delayMs(10);
+ 121   2                      
+ 122   2                      eeprom_buffer[0] = BIRTHDAY_FLAG;                       //生日标记
+ 123   2                      EEPROM_write_n(EEPROM_ADDR_BirthdayMark, &eeprom_buffer[0], 1);
+ 124   2                      delayMs(10);
+ 125   2                      
+ 126   2                      eeprom_buffer[0] = 0;                                           //设备锁解开
+ 127   2                      EEPROM_write_n(EEPROM_ADDR_deviceLockFLAG, &eeprom_buffer[0], 1);
+ 128   2                      delayMs(10);            
+ 129   2                      
+ 130   2                      memset(eeprom_buffer, 0, 12 * sizeof(u8));      //普通开关定时时刻表清零
+ 131   2                      EEPROM_write_n(EEPROM_ADDR_swTimeTab, &eeprom_buffer[0], 13);
+ 132   2                      delayMs(10);
+ 133   2                      
+ 134   2                      memset(eeprom_buffer, 0, 12 * sizeof(u8));      //指纹权限定时时刻表清零
+ 135   2                      EEPROM_write_n(EEPROM_ADDR_permissionTimeTab, &eeprom_buffer[0], 13);
+ 136   2                      delayMs(10);
+ 137   2                      
+ 138   2                      memset(eeprom_buffer, 0, 4 * sizeof(u8));       //指纹权限定时时长表清零
+ 139   2                      EEPROM_write_n(EEPROM_ADDR_permissionKeepTab, &eeprom_buffer[0], 13);
+ 140   2                      delayMs(10);
+ 141   2                      
+ 142   2                      memset(eeprom_buffer, 0, 13 * sizeof(u8));      //指纹模板清零
+ 143   2                      EEPROM_write_n(EEPROM_ADDR_FP_STORE, &eeprom_buffer[0], 13);
+ 144   2                      delayMs(10);
+ 145   2                      
+ 146   2                      memcpy(eeprom_buffer, IP_default, 4);           //服务器IP模板设置默认
+ 147   2                      EEPROM_write_n(EEPROM_ADDR_serverIP_record, &eeprom_buffer[0], 4);
+ 148   2                      delayMs(10);
+ 149   2                      
+ 150   2                      while(!fpID_allClear());                //清空指纹库
+ 151   2                      delayMs(10);
+ 152   2                      
+ 153   2                      sprintf(log_info, "首次启动\n");
+ 154   2                      
+ 155   2              }else{
+ 156   2              
+ 157   2                      sprintf(log_info, "非首次启动\n");
+ 158   2                      
+ 159   2              }
+ 160   1              
+ 161   1              LogDats(log_info, strlen(log_info));
+ 162   1              
+ 163   1      #else
+                      
+                      eeprom_buffer[0] = 0;           //重新标记出厂覆盖标记
+                      coverEEPROM_write_n(EEPROM_ADDR_BirthdayMark, &eeprom_buffer[0], 1);
+                      
+                      delayMs(10);
+                      
+                      sprintf(log_info, "产品记录已清除,产品标记已重新复位!!!\n");
+                      LogDats(log_info, strlen(log_info));
+                      
+                      eeprom_buffer[0] = 0;
+                      EEPROM_read_n(EEPROM_ADDR_BirthdayMark, &eeprom_buffer[0], 1);
+                      sprintf(log_info, "当前产品生日标记为： %02X\n", (int)eeprom_buffer[0]);
+                      LogDats(log_info, strlen(log_info));
+                      
+              #endif
+C51 COMPILER V9.54   DATAMANAGE                                                            08/17/2018 17:16:37 PAGE 4   
+
+ 179   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =   1076    ----
+   CONSTANT SIZE    =    277    ----
+   XDATA SIZE       =      6     152
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----    ----
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+   EDATA SIZE       =   ----    ----
+   HDATA SIZE       =   ----    ----
+   XDATA CONST SIZE =   ----    ----
+   FAR CONST SIZE   =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

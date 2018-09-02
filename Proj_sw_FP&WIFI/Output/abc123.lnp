@@ -1,0 +1,8 @@
+".\Output\User_main.obj",
+".\Output\Tips.obj",
+".\Output\sensor_FP.obj",
+".\Output\usrKin.obj",
+".\Output\Relay.obj",
+".\Output\dataTrans.obj" 
+TO ".\Output\abc123" 
+PRINT(".\Listing\abc123.m51") RAMSIZE(256) 

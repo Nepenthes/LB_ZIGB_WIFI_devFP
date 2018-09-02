@@ -1,0 +1,21 @@
+".\Output\User_main.obj",
+".\Output\dataManage.obj",
+".\Output\appTimer.obj",
+".\Output\Tips.obj",
+".\Output\usrKin.obj",
+".\Output\HYM8564.obj",
+".\Output\sensor_FP.obj",
+".\Output\Relay.obj",
+".\Output\timerAct.obj",
+".\Output\dataTrans.obj",
+".\Output\wifi_LPT220.obj",
+".\Output\delay.obj",
+".\Output\EEPROM.obj",
+".\Output\Soft_UART.obj",
+".\Output\GPIO.obj",
+".\Output\USART.obj",
+".\Output\timer.obj",
+".\Output\pars_Method.obj" 
+TO ".\Output\file_download" 
+
+PRINT(".\Listing\file_download.map") REMOVEUNUSED 
